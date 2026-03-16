@@ -1,3 +1,9 @@
+# Sensitive / credentials
+google-services.json
+**/google-services.json
+*.keystore
+*.jks
+
 # Miscellaneous
 *.class
 *.log

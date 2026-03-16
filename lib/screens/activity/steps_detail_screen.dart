@@ -57,14 +57,29 @@ class _StepsDetailScreenState extends State<StepsDetailScreen>
   }
 
   String _mapSource(String source) {
-    if (source.contains('com.google.android.apps.fitness')) return 'Google Fit';
-    if (source.contains('com.sec.android') || source.contains('samsung.shealth')) {
+    final lower = source.toLowerCase();
+    if (lower.contains('com.google.android.apps.fitness')) return 'Google Fit';
+    if (lower.contains('com.sec.android') ||
+        lower.contains('samsung.shealth') ||
+        lower.contains('com.samsung.health') ||
+        lower.contains('shealth') ||
+        (lower.contains('samsung') && !lower.contains('galaxy'))) {
       return 'Samsung Health';
     }
-    if (source.contains('hevy')) return 'Hevy';
-    if (source.contains('healthconnect')) return 'Health Connect';
-    if (source.contains('com.google.android.apps.healthdata')) return 'Health Platform';
-    return source.split('.').last;
+    if (lower.contains('galaxy') || lower.contains('gear')) return 'Galaxy Watch';
+    if (lower.contains('hevy')) return 'Hevy';
+    if (lower.contains('healthconnect')) return 'Health Connect';
+    if (lower.contains('com.google.android.apps.healthdata')) return 'Health Platform';
+    if (lower.contains('google') || lower.contains('fitness')) return 'Google Fit';
+    if (lower.contains('strava')) return 'Strava';
+    if (lower.contains('garmin')) return 'Garmin Connect';
+    if (lower.contains('fitbit')) return 'Fitbit';
+    final parts = source.split('.');
+    if (parts.length >= 2) {
+      final name = parts.last.isEmpty ? parts[parts.length - 2] : parts.last;
+      return '${name[0].toUpperCase()}${name.substring(1)}';
+    }
+    return source;
   }
 
   Future<void> _addSteps() async {
@@ -290,6 +305,40 @@ class _SummaryTab extends StatelessWidget {
             ),
           ),
         ],
+
+        // Samsung Health sync hint — shown when no Samsung steps are present
+        Builder(builder: (context) {
+          final hasSamsungSteps = grouped.entries.any((e) {
+            final lower = e.key.toLowerCase();
+            final isSamsung = lower.contains('samsung') ||
+                lower.contains('shealth') ||
+                lower.contains('galaxy') ||
+                lower.contains('sec.android');
+            final steps = (e.value as Map<String, double>?)?['steps'] ?? 0.0;
+            return isSamsung && steps > 0;
+          });
+          if (hasSamsungSteps || grouped.isEmpty) return const SizedBox.shrink();
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: _InfoCard(
+              accent: NudgeTokens.amber,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded, color: NudgeTokens.amber, size: 18),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Samsung Health shows 0 steps. To fix: open Samsung Health → Profile → Connected Services → Health Connect → turn on Steps sync.',
+                      style: TextStyle(
+                          color: NudgeTokens.textMid, fontSize: 12, height: 1.4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
 
         const SizedBox(height: 24),
         _SectionHeader('ALL SOURCES COMPARED'),
@@ -574,12 +623,22 @@ class _RawTab extends StatelessWidget {
                     children: [
                       Row(children: [
                         Expanded(
-                          child: Text(src,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600),
-                              overflow: TextOverflow.ellipsis),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(src,
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600),
+                                  overflow: TextOverflow.ellipsis),
+                              Text(p.sourceName,
+                                  style: const TextStyle(
+                                      color: NudgeTokens.textLow,
+                                      fontSize: 9),
+                                  overflow: TextOverflow.ellipsis),
+                            ],
+                          ),
                         ),
                         if (isCounted)
                           const Padding(

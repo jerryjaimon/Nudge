@@ -902,6 +902,7 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
               workout: workout,
               lastByExercise: lastBy,
               onEditHcSession: (hcIdx, updated) => _saveHcSessionEdit(dayIso, hcIdx, updated),
+              onDeleteHcSession: (hcIdx) => _deleteHcSession(dayIso, hcIdx),
             ),
         ],
       ),
@@ -1005,6 +1006,34 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
     }
     await _saveWorkouts(list);
     if (mounted) setState(() {});
+  }
+
+  // ── HC Session Delete ─────────────────────────────────────────────────────
+  Future<void> _deleteHcSession(String dayIso, int hcIdx) async {
+    final workouts = _workouts();
+    final idx = workouts.indexWhere((w) => w['dayIso'] == dayIso);
+    if (idx < 0) return;
+    final w = Map<String, dynamic>.from(workouts[idx]);
+    final sessions = (w['hcSessions'] as List?)?.toList() ?? [];
+    if (hcIdx >= sessions.length) return;
+    sessions.removeAt(hcIdx);
+    w['hcSessions'] = sessions;
+    w['calories'] = sessions.fold<int>(0, (sum, s) => sum + ((s as Map)['calories'] as num? ?? 0).toInt());
+    w['updatedAt'] = DateTime.now().toIso8601String();
+    final hasExercises = (w['exercises'] as List?)?.isNotEmpty == true;
+    final hasCardio = (w['cardio'] as List?)?.isNotEmpty == true;
+    if (!hasExercises && !hasCardio && sessions.isEmpty) {
+      workouts.removeAt(idx);
+    } else {
+      workouts[idx] = w;
+    }
+    await _saveWorkouts(workouts);
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session removed.')),
+      );
+    }
   }
 
   // ── HC Session Edit ───────────────────────────────────────────────────────
@@ -2087,11 +2116,13 @@ class _WorkoutPreview extends StatelessWidget {
   final Map<String, dynamic> workout;
   final Map<String, dynamic> lastByExercise;
   final void Function(int hcIdx, Map<String, dynamic> updated)? onEditHcSession;
+  final void Function(int hcIdx)? onDeleteHcSession;
 
   const _WorkoutPreview({
     required this.workout,
     required this.lastByExercise,
     this.onEditHcSession,
+    this.onDeleteHcSession,
   });
 
   double _bestWeight(List sets) {
@@ -2199,7 +2230,12 @@ class _WorkoutPreview extends StatelessWidget {
             borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
         builder: (_) => _HcSessionEditSheet(session: s),
       );
-      if (updated != null) onEditHcSession?.call(originalIdx, updated);
+      if (updated == null) return;
+      if (updated['__delete'] == true) {
+        onDeleteHcSession?.call(originalIdx);
+      } else {
+        onEditHcSession?.call(originalIdx, updated);
+      }
     }
 
     Widget hcCard({
@@ -3174,6 +3210,22 @@ class _HcSessionEditSheetState extends State<_HcSessionEditSheet> {
                 ],
               ),
             ),
+          // Remove button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: () => Navigator.pop(context, <String, dynamic>{'__delete': true}),
+                icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                label: const Text('Remove from log'),
+                style: TextButton.styleFrom(
+                  foregroundColor: NudgeTokens.red,
+                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ),
           ],
         ),
       ),

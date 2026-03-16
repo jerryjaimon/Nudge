@@ -204,6 +204,20 @@ class HealthService {
       double finalSteps = dedupSteps;
       debugPrint('Deduplicated steps: $finalSteps (bestSource=$bestSource)');
 
+      // Fallback: if dedup gave 0 but HC has data, use getTotalStepsInInterval.
+      // Handles Samsung Health writing steps under an unexpected sourceName.
+      if (finalSteps == 0 && healthData.isNotEmpty) {
+        try {
+          final s = start ?? dayBoundaryStart();
+          final e = end ?? DateTime.now();
+          final hcTotal = await health.getTotalStepsInInterval(s, e);
+          if (hcTotal != null && hcTotal > 0) {
+            finalSteps = hcTotal.toDouble();
+            debugPrint('Using getTotalStepsInInterval fallback: $finalSteps');
+          }
+        } catch (_) {}
+      }
+
       // Distance and water from best source (or max fallback)
       if (bestSource != null) {
         finalDist = grouped[bestSource]!['distance']!;
