@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"F:\\\\Development\\\\Flutter\\\\flutter_windows_3.29.3-stable\\\\flutter\\\\bin\\\\flutter.bat\" run --debug)",
+      "Bash(python3.exe -c \"print\\(''ok''\\)\")",
+      "Bash(py -c \"print\\(''ok''\\)\")",
+      "Bash(\"F:\\\\Development\\\\Flutter\\\\flutter_windows_3.29.3-stable\\\\flutter\\\\bin\\\\flutter.bat\" pub get)",
+      "Bash(\"F:\\\\Development\\\\Flutter\\\\flutter_windows_3.29.3-stable\\\\flutter\\\\bin\\\\flutter.bat\" analyze lib/screens/food/add_food_sheet.dart lib/screens/gym/workout_editor.dart lib/screens/gym/gym_screen.dart lib/screens/gym/exercise_db.dart lib/utils/food_service.dart)",
+      "Bash(\"F:\\\\Development\\\\Flutter\\\\flutter_windows_3.29.3-stable\\\\flutter\\\\bin\\\\flutter.bat\" build apk --debug)",
+      "Read(//c/Users/Jerry/AppData/Local/Pub/Cache/hosted/pub.dev/**)",
+      "Bash(xargs grep:*)",
+      "Bash(\"F:\\\\Development\\\\Flutter\\\\flutter_windows_3.29.3-stable\\\\flutter\\\\bin\\\\flutter.bat\" analyze:*)",
+      "Bash(\"F:\\\\Development\\\\Flutter\\\\flutter_windows_3.29.3-stable\\\\flutter\\\\bin\\\\flutter.bat\" pub:*)",
+      "Bash(\"F:/Development/Flutter/flutter_windows_3.29.3-stable/flutter/bin/flutter.bat\" run:*)",
+      "Bash(find f:/Development/Nudge/android -name *.gradle -o -name *.gradle.kts)",
+      "Bash(\"F:/Development/Flutter/flutter_windows_3.29.3-stable/flutter/bin/flutter.bat\" clean:*)",
+      "Bash(start ms-settings:developers)",
+      "Bash(\"F:/Development/Flutter/flutter_windows_3.29.3-stable/flutter/bin/flutter.bat\" analyze:*)",
+      "Bash(find f:/Development/Nudge/lib -name *onboard* -o -name *welcome* -o -name *setup*)",
+      "Bash(grep -r VO2 F:DevelopmentFlutterflutter_windows_3.29.3-stableflutter.pub-cachehostedpub.dev --include=*.dart -l)",
+      "Bash(grep -r \"VO2\\\\|vo2max\\\\|V02\" F:/Development/Nudge/.dart_tool --include=*.dart -l)",
+      "Read(//c/src/**)",
+      "Read(//c/Users/**)",
+      "Bash(find C:/Users/Jerry -path */health-*/lib/src/types/health_data_types.dart)",
+      "Bash(find F:/Development/Nudge -path */.pub-cache/* -name *.dart)",
+      "WebSearch"
+    ]
+  }
+}

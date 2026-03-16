@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg"
+    android:padding="16dp">
+
+    <!-- Green accent bar -->
+    <View
+        android:layout_width="28dp"
+        android:layout_height="3dp"
+        android:background="#39D98A"
+        android:layout_marginBottom="10dp"/>
+
+    <!-- Label row: BACKUP | Auto: ON/OFF -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="BACKUP"
+            android:textSize="9sp"
+            android:textColor="#5A7582"
+            android:textStyle="bold"
+            android:letterSpacing="0.15"/>
+
+        <TextView
+            android:id="@+id/backup_auto_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Auto: ON"
+            android:textSize="9sp"
+            android:textColor="#39D98A"
+            android:textStyle="bold"/>
+    </LinearLayout>
+
+    <!-- Big time label -->
+    <TextView
+        android:id="@+id/backup_time"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:text="Never"
+        android:textSize="36sp"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:fontFamily="sans-serif-medium"
+        android:maxLines="1"
+        android:ellipsize="end"/>
+
+    <!-- Status row -->
+    <TextView
+        android:id="@+id/backup_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Not backed up"
+        android:textSize="11sp"
+        android:textColor="#B0C4CF"/>
+</LinearLayout>

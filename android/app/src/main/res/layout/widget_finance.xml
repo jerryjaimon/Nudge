@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <View
+            android:layout_width="3dp"
+            android:layout_height="12dp"
+            android:background="#39D98A"
+            android:layout_marginEnd="8dp"/>
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="FINANCE"
+            android:textColor="#5A7582"
+            android:textSize="10sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/finance_month"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="this month"
+            android:textColor="#5A7582"
+            android:textSize="10sp"/>
+    </LinearLayout>
+
+    <!-- Spent amount -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="bottom"
+        android:layout_marginTop="8dp">
+
+        <TextView
+            android:id="@+id/finance_spent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0"
+            android:textColor="#FFFFFF"
+            android:textSize="36sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/finance_budget_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=" / 0"
+            android:textColor="#5A7582"
+            android:textSize="13sp"
+            android:layout_marginBottom="7dp"
+            android:layout_marginStart="2dp"/>
+    </LinearLayout>
+
+    <!-- Progress bar -->
+    <ProgressBar
+        android:id="@+id/finance_progress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="6dp"
+        android:progressDrawable="@drawable/widget_progress_amber"
+        android:max="100"
+        android:progress="0"
+        android:layout_marginTop="6dp"/>
+
+    <!-- Remaining label -->
+    <TextView
+        android:id="@+id/finance_remaining"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="No budget set"
+        android:textColor="#B0C4CF"
+        android:textSize="11sp"
+        android:layout_marginTop="4dp"/>
+
+</LinearLayout>
