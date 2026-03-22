@@ -9,7 +9,7 @@ import android.widget.RemoteViews
 
 class FinanceWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        val sp        = context.getSharedPreferences("HomeWidgetPlugin", Context.MODE_PRIVATE)
+        val sp        = context.getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
         val spent     = sp.getString("finance_spent", "0") ?: "0"
         val budget    = sp.getString("finance_budget_label", "/ 0") ?: "/ 0"
         val percent   = sp.getInt("finance_percent", 0)

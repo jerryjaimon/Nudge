@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app.dart' show NudgeTokens;
@@ -8,11 +9,15 @@ import '../utils/usage_service.dart';
 import 'movies/movies_screen.dart';
 import 'books/books_screen.dart';
 import 'protected/protected_gate.dart';
+import 'habits/my_habits_screen.dart';
+import 'trackers/day_tracker_screen.dart';
 import 'pomodoro/pomodoro_screen.dart';
 import 'gym/gym_screen.dart';
 import 'finance/finance_screen.dart';
 import 'settings_screen.dart';
 import 'activity/activity_summary_screen.dart';
+import 'health/running_coach_list_screen.dart';
+import '../widgets/weekly_progress_card.dart';
 import '../services/running_coach_service.dart';
 import 'food/food_screen.dart';
 import 'usage/usage_screen.dart';
@@ -22,7 +27,6 @@ import '../widgets/daily_progress_rings.dart';
 import 'detox/detox_screen.dart';
 import '../services/health_center_service.dart';
 import 'health/health_center_screen.dart';
-import 'health/running_coach_list_screen.dart';
 import '../utils/streak_service.dart';
 import '../utils/notification_service.dart';
 
@@ -49,6 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: const [
           _HomeTab(),
           ActivitySummaryScreen(),
+          _ProgressTab(),
           SettingsScreen(),
         ],
       ),
@@ -219,7 +224,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
             ),
           ),
 
-          const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          SliverToBoxAdapter(child: SizedBox(height: MediaQuery.of(context).padding.bottom + 110)),
         ],
       ),
     );
@@ -299,14 +304,52 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
       ));
     }
     if (AppStorage.enabledModules.contains('health')) {
+      final steps = (_stats['steps'] as num?)?.toInt() ?? 0;
+      final cal = (_stats['caloriesBurned'] as num?)?.toInt() ?? 0;
       healthCards.add(_ModuleCard(
-        title: 'Activity',
-        status: _loading ? '…' : 'Tracker + AI Coach',
-        icon: Icons.directions_run_rounded,
+        title: 'Cardio Coach',
+        status: _loading ? '…' : (steps > 0 ? '$steps steps' : 'No sessions'),
+        icon: Icons.route_rounded,
         accentA: NudgeTokens.purple,
         accentB: NudgeTokens.purple,
+        metrics: _loading
+            ? null
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Spacer(),
+                  Text(
+                    steps >= 1000
+                        ? '${(steps / 1000).toStringAsFixed(1)}k'
+                        : (steps > 0 ? '$steps' : '--'),
+                    style: GoogleFonts.outfit(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      color: NudgeTokens.green,
+                      height: 1.0,
+                    ),
+                  ),
+                  const Text('steps',
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: NudgeTokens.textLow,
+                          fontWeight: FontWeight.w600)),
+                  if (cal > 0) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      '$cal kcal',
+                      style: GoogleFonts.outfit(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: NudgeTokens.amber),
+                    ),
+                  ],
+                  const SizedBox(height: 2),
+                ],
+              ),
         onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const RunningCoachListScreen()))
+            .push(MaterialPageRoute(
+                builder: (_) => const RunningCoachListScreen()))
             .then((_) => _fetchStats()),
       ));
     }
@@ -331,6 +374,18 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
             .then((_) => _fetchStats()),
       ));
     }
+    if (AppStorage.enabledModules.contains('my_habits')) {
+      prodCards.add(_ModuleCard(
+        title: 'My Habits',
+        status: _loading ? '…' : 'Daily tracker',
+        icon: Icons.checklist_rounded,
+        accentA: NudgeTokens.purple,
+        accentB: NudgeTokens.green,
+        onTap: () => Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => const MyHabitsScreen()))
+            .then((_) => _fetchStats()),
+      ));
+    }
     if (AppStorage.enabledModules.contains('habits')) {
       prodCards.add(_ModuleCard(
         title: 'Habits',
@@ -344,6 +399,16 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
             .then((_) => _fetchStats()),
       ));
     }
+    prodCards.add(_ModuleCard(
+      title: 'Day Trackers',
+      status: 'Year progress',
+      icon: Icons.grid_view_rounded,
+      accentA: NudgeTokens.purple.withValues(alpha: 0.3),
+      accentB: NudgeTokens.purple,
+      onTap: () => Navigator.of(context)
+          .push(MaterialPageRoute(builder: (_) => const DayTrackerScreen()))
+          .then((_) => _fetchStats()),
+    ));
     if (prodCards.isNotEmpty) {
       slivers.add(_sectionLabel('PRODUCTIVITY'));
       slivers.add(_moduleGrid(prodCards));
@@ -570,6 +635,33 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
 
 }
 
+// ── Progress tab ───────────────────────────────────────────────────────────────
+
+class _ProgressTab extends StatelessWidget {
+  const _ProgressTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        title: Text(
+          'Weekly Progress',
+          style: GoogleFonts.outfit(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        automaticallyImplyLeading: false,
+      ),
+      body: const WeeklyProgressCard(fullScreen: true),
+    );
+  }
+}
+
 // ── Bottom nav bar ─────────────────────────────────────────────────────────────
 
 class _NudgeNavBar extends StatelessWidget {
@@ -581,41 +673,46 @@ class _NudgeNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<NudgeThemeExtension>()!;
-    return Container(
-      height: 64,
-      margin: const EdgeInsets.fromLTRB(24, 0, 24, 30),
-      decoration: BoxDecoration(
-        color: theme.scaffoldBg ?? NudgeTokens.bg,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 30),
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 15,
-            spreadRadius: 2,
-            offset: const Offset(0, 5),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            height: 64,
+            decoration: BoxDecoration(
+              color: (theme.scaffoldBg ?? NudgeTokens.bg).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(32),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _NavBarItem(
+                    icon: Icons.grid_view_rounded,
+                    label: 'Home',
+                    isSelected: currentIndex == 0,
+                    onTap: () => onTap(0)),
+                _NavBarItem(
+                    icon: Icons.local_activity_rounded,
+                    label: 'Activity',
+                    isSelected: currentIndex == 1,
+                    onTap: () => onTap(1)),
+                _NavBarItem(
+                    icon: Icons.calendar_view_week_rounded,
+                    label: 'Progress',
+                    isSelected: currentIndex == 2,
+                    onTap: () => onTap(2)),
+                _NavBarItem(
+                    icon: Icons.settings_rounded,
+                    label: 'Settings',
+                    isSelected: currentIndex == 3,
+                    onTap: () => onTap(3)),
+              ],
+            ),
           ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _NavBarItem(
-              icon: Icons.grid_view_rounded,
-              label: 'Home',
-              isSelected: currentIndex == 0,
-              onTap: () => onTap(0)),
-          _NavBarItem(
-              icon: Icons.local_activity_rounded,
-              label: 'Activity',
-              isSelected: currentIndex == 1,
-              onTap: () => onTap(1)),
-          _NavBarItem(
-              icon: Icons.settings_rounded,
-              label: 'Settings',
-              isSelected: currentIndex == 2,
-              onTap: () => onTap(2)),
-        ],
+        ),
       ),
     );
   }
@@ -721,6 +818,7 @@ class _ModuleCard extends StatelessWidget {
   final Color accentA;
   final Color accentB;
   final VoidCallback onTap;
+  final Widget? metrics;
 
   const _ModuleCard({
     required this.title,
@@ -729,6 +827,7 @@ class _ModuleCard extends StatelessWidget {
     required this.accentA,
     required this.accentB,
     required this.onTap,
+    this.metrics,
   });
 
   @override
@@ -772,7 +871,7 @@ class _ModuleCard extends StatelessWidget {
                   ),
                   child: Icon(icon, size: 19, color: accentB),
                 ),
-                const Spacer(),
+                metrics != null ? Expanded(child: metrics!) : const Spacer(),
                 // Title
                 Text(
                   title,

@@ -190,12 +190,9 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
           .showSnackBar(const SnackBar(content: Text('Enter an amount.')));
       return;
     }
-    final merchant = _merchantCtrl.text.trim();
-    if (merchant.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Enter a merchant name.')));
-      return;
-    }
+    final merchant = _merchantCtrl.text.trim().isEmpty
+        ? 'Unknown'
+        : _merchantCtrl.text.trim();
 
     final init = widget.initial;
     final id = init?['id']?.toString() ??
@@ -351,7 +348,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             TextField(
               controller: _merchantCtrl,
               textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(labelText: 'Merchant / Payee'),
+              decoration: const InputDecoration(labelText: 'Merchant / Payee (optional)', hintText: 'e.g. Tesco, Amazon'),
             ),
             const SizedBox(height: 12),
 

@@ -1,277 +1,271 @@
 # Nudge
 
-A personal productivity and lifestyle tracker for Android. Dark, minimal aesthetic. Everything stored locally — cloud backup is optional and end-to-end encrypted.
+A personal productivity and habit tracker built with Flutter for Android. Nudge integrates health data, AI-powered coaching, finance tracking, fitness planning, and daily habit management in one privacy-first app. All data is stored locally on device — cloud backup is optional and end-to-end encrypted.
+
+---
+
+## Overview
+
+Nudge helps you build and maintain healthy routines across six life domains: **fitness**, **nutrition**, **finance**, **mental performance**, **entertainment**, and **mindfulness**. AI features use your own Gemini API key — nothing is sent to any server without your explicit consent.
 
 ---
 
 ## Features
 
-### Gym
-- Log workouts (exercises, sets, reps, weight)
-- Custom exercise library + built-in exercises
-- Workout routines — save and reuse
-- Weigh-in tracking with history
-- Weekly streak (configurable target days/week)
-- 3-tab layout: Today / Weekly / Logbook
-- Per-exercise AI Coach stubs (target + rank — future)
+### Fitness & Movement
+- **Steps & Movement** — syncs step count, calories burned, and distance from Health Connect (Samsung Health, Pixel Health, Garmin, etc.)
+- **Cardio Coach** — GPS-based activity tracking with real-time pace, distance, elevation, and heart rate. Supports Run, Walk, Hike, Cycle, and Trail Run. Keeps tracking in the background via a persistent foreground notification.
+- **Gym** — log exercises, sets, weights, and reps. AI generates personalised workout routines. Tracks weekly volume and progression.
+- **Body Composition** — track weight, body fat %, and muscle mass over time.
+
+### Nutrition
+- **Food & Nutrition** — log meals, track macros (protein, carbs, fat) and calories. AI nutrition coach analyses your logs.
+- **Hydration** — track daily water intake with quick-add buttons.
 
 ### Finance
-- Log expenses by category
-- Monthly budget
-- Spending vs budget progress
-- Revolut auto-import via notification listener
+- **Finance** — log expenses and income, view spending by category. Parses bank SMS notifications (Indian banks supported). AI generates a personalised financial plan using the 50/30/20 framework.
+- **SMS / Notification parsing** — automatically reads bank SMS and notification data to extract transactions locally.
 
-### Food
-- Log food entries with calories
-- Personal food library
-- Daily calorie total
+### Mental Performance
+- **Pomodoro** — timed focus sessions with rest periods. Daily focus minutes tracked.
+- **Protected Habits** — accountability habits protected by a PIN/pattern. Tracks streaks and weekly completion.
 
-### Habits
-- Counter-based habit logging
-- Daily completion tracking
-- Streak tracking
-- PIN / biometric lock (protected box)
+### Entertainment
+- **Movies & TV** — log films and shows you watch, with runtime and review.
+- **Books** — track reading progress, log pages read per day, and maintain a reading list.
 
-### Books & Movies
-- Watchlist / reading list management
-- Status tracking (to-watch, watching, finished)
+### Wellbeing
+- **Digital Detox** — app usage monitoring and screen time goals.
+- **Health Centre** — weekly workout sessions, body composition, sleep data from Health Connect, and AI-generated health insights.
 
-### Pomodoro / Focus
-- Configurable work/break timers (default 50/17 min)
-- Project-based session tracking
-- App blocker during sessions
-- Dedicated stats screen (total focus time, per-project breakdown, session history)
-
-### Health
-- Reads from Android Health Connect: steps, calories, heart rate, HRV, sleep, weight, hydration, blood pressure, body fat, oxygen saturation, exercise routes, and more
-- Running coach with personal records and training data
-- GPS route tracking
-
-### Detox / Screen Time
-- App usage tracking via UsageStatsManager
-- App blocklist for Pomodoro mode
-
-### AI
-- Gemini integration (dual API key support)
-- Markdown-rendered responses
-- AI error log (last 50 entries)
+### Home
+- Two-column module grid for quick access to all features.
+- Daily progress rings (calories, steps, habits, focus).
+- Daily stats strip (gym sets, kcal in, kcal out, water, focus).
+- Weekly progress card with 7-day view across habits, nutrition, gym, and focus.
 
 ---
 
-## Home Screen Widgets
+## Activity Tab — Daily Progress Cards
 
-Five Android home screen widgets — long-press home screen → Widgets → search "nudge":
+The Activity tab shows a swipeable full-screen card for each tracked metric. Each card shows a large central metric, progress bar, two stat tiles, and a quick-action button.
 
-| Widget | Size | Content |
-|--------|------|---------|
-| GYM | 4×2 | Streak · sessions this week |
-| FINANCE | 4×2 | Spent / budget · progress bar |
-| HABITS | 4×2 | Done / total · progress bar |
-| FOCUS | 2×2 | Focus time · sessions today |
-| NUTRITION | 4×2 | Calories · progress to goal |
+| Card | Main Metric | Daily Goal |
+|------|-------------|------------|
+| Movement | Steps | 10,000 |
+| Gym | Sets completed | — |
+| Nutrition | Calories consumed | Your target |
+| Hydration | Water intake (ml) | Your target |
+| Focus | Pomodoro minutes | 90 min |
+| Reading | Pages read | 30 pages |
+| Entertainment | Watch time | 2 hour cap |
+| Cardio | GPS distance (km) | 5 km |
+| Gaming | Coming soon | — |
+| This Week | 7-day summary | — |
 
-Widgets auto-refresh on app launch. All dark-themed to match the app.
+Swipe left/right to navigate between cards. Use the date arrows at the top to view past days.
 
 ---
 
-## Cloud Backup
+## Onboarding Flow
 
-Optional. Requires Google Sign-In.
+The onboarding wizard collects your profile and preferences across 12 steps:
 
-- Data is **AES-256-CBC encrypted on-device** before upload
-- Your passphrase is the only decryption key — never stored anywhere
-- Firestore stores only opaque encrypted blobs
-- Each user's data is namespaced by Google UID
-- Firestore security rules prevent cross-user access
-- Signing out does **not** delete local data
+| Step | Screen | What it collects |
+|------|--------|------------------|
+| 0 | Intro & Sign-In | Optional Google account (for cloud backup) |
+| 1 | AI Setup | Your Gemini API key (stored on device only) |
+| 2 | About You | Name, age, gender, height, weight |
+| 3 | Goals | Health & life goals (multi-select) |
+| 4 | Activity Level | Fitness level + preferred activity types |
+| 5 | Schedule | Workout days + session duration per week |
+| 6 | Workout Import | Upload workout images or paste text for AI analysis |
+| 7 | Fitness Plan | AI generates a personalised workout programme |
+| 8 | Calorie & Hydration | Daily calorie target + water goal (TDEE-calculated) |
+| 9 | Finance | Monthly income, budget, currency, savings % |
+| 10 | Modules | Enable/disable individual feature modules |
+| 11 | Finance Plan | AI generates a personalised financial plan |
 
-Firestore layout:
+All collected data is saved locally to Hive. Only the data listed in the AI sections below is ever sent to Google's Gemini API.
+
+---
+
+## Data Collected
+
+### Stored Locally (Hive — on device only)
+
+| Data | Used For |
+|------|----------|
+| Profile (age, gender, height, weight) | TDEE calculations, AI prompts |
+| Workout logs (exercises, sets, reps, weights) | Gym tracking, progression charts |
+| GPS sessions (distance, duration, pace, HR) | Cardio Coach history |
+| Health history (steps, calories, distance by day) | Trends, activity summary |
+| Body weight log | Composition tracking |
+| Food entries (meals, macros, calories per day) | Nutrition tracking |
+| Water log | Hydration tracking |
+| Pomodoro sessions | Focus tracking |
+| Books (title, pages, reading logs) | Reading progress |
+| Movies (title, runtime, watch date) | Entertainment log |
+| Expenses & income | Finance dashboard |
+| Habits (name, completions, streaks) | Habit tracking |
+| Settings (goals, preferences, API key) | App configuration |
+
+### Read from Health Connect
+- Steps, active & total calories burned, distance
+- Heart rate, resting HR, HRV
+- Sleep sessions
+- Exercise/workout sessions (from other apps)
+- Weight, height, body fat %, lean body mass, bone mass
+- Blood glucose, oxygen saturation, blood pressure, body temperature
+- Hydration, respiratory rate, floors climbed
+
+### SMS & Notifications (Finance module only)
+- Bank SMS messages are read and parsed **locally** to extract transaction amount, merchant, and date
+- Notifications from bank apps are parsed locally
+- **No SMS or notification content is ever transmitted anywhere**
+
+---
+
+## AI Integration
+
+Nudge uses **Google Gemini** via your personal API key from [Google AI Studio](https://aistudio.google.com/). The key is stored only on your device.
+
+### What is sent to Gemini
+
+| Feature | Data sent to Gemini |
+|---------|-------------------|
+| Fitness Plan | Age, gender, fitness level, goals, schedule, existing routine, workout images |
+| Nutritional advice | Calorie & water goals, fitness plan text |
+| Gym Chat Coach | Exercise name, last session sets/weights, gym profile |
+| Finance Plan | Monthly income, budget, savings %, debt amount, investment goal, currency — **name is NOT sent** |
+| Health Analysis | Sleep duration, HR trends, step trends, body composition values |
+| Workout Image Import | Images you upload in onboarding Step 6 |
+
+### What is never sent to AI
+- Your name or any personally identifying information
+- Raw SMS content or bank account numbers
+- GPS coordinates or route data
+- Individual food diary entries
+
+---
+
+## Architecture
+
+| Layer | Technology |
+|-------|-----------|
+| UI Framework | Flutter 3.29+ (stable) |
+| State Management | `ChangeNotifier` with `ListenableBuilder` (no Provider package) |
+| Local Storage | Hive |
+| Health Data | `health` package → Health Connect (Android) |
+| GPS Tracking | `geolocator` with foreground service + wake lock |
+| Maps | `flutter_map` (OpenStreetMap tiles) |
+| AI | `google_generative_ai` (Gemini 1.5 Flash) |
+| Charts | `fl_chart` |
+| Typography | Google Fonts — Outfit |
+| Design System | `NudgeTokens` in `lib/app.dart` |
+
+### Design System — NudgeTokens
+
+All colours, gradients, and spacing constants live in `abstract class NudgeTokens` in [lib/app.dart](lib/app.dart). Import with:
+
+```dart
+import '../app.dart' show NudgeTokens;
 ```
-users/{uid}/
-  profile       ← display name, email, last seen (no sensitive data)
-  backup/
-    gym         ← { payload: "iv:ciphertext", backedUpAt, version }
-    finance
-    food
-    food_library
-    books
-    movies
-    settings
-    protected
-    pomodoro
-```
 
----
+Key colours:
+- Background: `bg` #050A0D · `surface` #0C1317 · `card` #0F1A1F
+- Accent: `purple` #7C4DFF · `green` #39D98A · `amber` #FFBF00 · `red` #FF4D6A · `blue` #5AC8FA
+- Feature gradients: `gymA/gymB`, `moviesA/B`, `booksA/B`, `pomA/B`, `foodA/B`, `finA/B`
 
-## Tech Stack
-
-| | |
-|--|--|
-| Framework | Flutter 3.29 (Dart ≥3.2) |
-| Local storage | Hive 2.x (9 boxes) |
-| State management | ChangeNotifier |
-| Cloud | Firebase Auth + Firestore |
-| AI | Gemini (`google_generative_ai`) |
-| Charts | fl_chart |
-| Font | Google Fonts — Outfit |
-| Maps | Flutter Map (OpenStreetMap) |
-| Location | geolocator |
-| Health | Health Connect |
-| Home widgets | home_widget |
-| Notifications | flutter_local_notifications |
-| Encryption | AES-256-CBC (`encrypt`) |
-| QR / Barcode | mobile_scanner |
-| PDF export | pdf + printing |
-
----
-
-## Project Structure
+### Key Files
 
 ```
 lib/
-├── app.dart                          ← NudgeTokens design system + app root
+├── app.dart                    ← NudgeTokens + theme
 ├── main.dart
-├── storage.dart                      ← AppStorage (all Hive boxes)
-├── models/
-│   └── card_model.dart
-├── providers/
-│   └── app_state.dart                ← ChangeNotifier
-├── services/
-│   ├── auth_service.dart             ← Google Sign-In wrapper
-│   ├── firebase_backup_service.dart  ← AES backup/restore
-│   └── widget_service.dart           ← Home screen widget data push
+├── storage.dart                ← Hive box accessors
+├── providers/app_state.dart    ← Root ChangeNotifier
 ├── screens/
-│   ├── home_screen.dart              ← 2-column grid
-│   ├── settings_screen.dart
-│   ├── auth/
-│   │   └── sign_in_screen.dart
-│   ├── books/
-│   ├── movies/
+│   ├── home_screen.dart        ← 2-column grid home
+│   ├── activity/
+│   │   ├── activity_summary_screen.dart  ← Full-screen swipeable daily cards
+│   │   ├── activity_tracker_screen.dart  ← GPS Cardio Coach tracking UI
+│   │   └── steps_detail_screen.dart
 │   ├── gym/
-│   │   └── gym_screen.dart
-│   ├── pomodoro/
-│   │   ├── pomodoro_screen.dart
-│   │   └── pomodoro_stats_screen.dart
-│   ├── protected/
-│   │   ├── protected_habits_screen.dart
-│   │   └── protected_gate.dart
+│   │   ├── gym_screen.dart     ← Gym home
+│   │   └── workout_editor.dart ← Exercise/sets logger with timer
 │   ├── health/
-│   │   └── running_coach_list_screen.dart
-│   └── export/
+│   │   ├── health_center_screen.dart
+│   │   └── running_coach_list_screen.dart ← Cardio Coach history
+│   ├── finance/
+│   │   ├── finance_screen.dart
+│   │   └── add_expense_sheet.dart
+│   ├── onboarding/
+│   │   └── onboarding_flow_screen.dart  ← 12-step wizard
+│   └── food/, books/, movies/, pomodoro/, protected/, settings/
+├── services/
+│   ├── gps_tracking_service.dart   ← GPS singleton + foreground service
+│   └── health_center_service.dart
 ├── utils/
-│   ├── detox_service.dart
-│   └── notification_service.dart
+│   ├── health_service.dart     ← Health Connect bridge
+│   ├── gemini_service.dart     ← Gemini API wrapper
+│   └── finance_service.dart
 └── widgets/
-    └── empty_card.dart
-
-android/app/src/main/
-├── kotlin/com/example/nudge/
-│   ├── MainActivity.kt
-│   ├── PomodoroBlockerService.kt     ← foreground app monitor
-│   ├── RevolutNotificationService.kt ← Revolut expense parser
-│   ├── GymWidget.kt
-│   ├── FinanceWidget.kt
-│   ├── HabitsWidget.kt
-│   ├── PomodoroWidget.kt
-│   └── FoodWidget.kt
-└── res/
-    ├── layout/                       ← widget_*.xml layouts
-    ├── xml/                          ← widget_*_info.xml metadata
-    └── drawable/                     ← widget_bg.xml, progress drawables
+    ├── weekly_progress_card.dart   ← 7-day summary (fullScreen mode supported)
+    └── daily_progress_rings.dart   ← Circular progress rings
 ```
 
 ---
 
-## Design System
-
-All tokens in `abstract class NudgeTokens` in [lib/app.dart](lib/app.dart):
-
-```dart
-// Backgrounds
-bg        = #050A0D
-surface   = #0C1317
-elevated  = #111B20
-card      = #0F1A1F
-
-// Accents
-purple    = #7C4DFF
-green     = #39D98A
-amber     = #FFBF00
-red       = #FF4D6A
-blue      = #5AC8FA
-
-// Text
-textHigh  = #FFFFFF
-textMid   = #B0C4CF
-textLow   = #5A7582
-
-// Borders
-border    = white 8%
-borderHi  = white 13%
-```
-
-Import anywhere: `import '../app.dart' show NudgeTokens;`
-
----
-
-## Setup
+## Setup & Running
 
 ### Requirements
-- Flutter 3.29+
-- Android SDK (minSdk 26 / Android 8.0, targetSdk 36)
-- Java 11+
+- Flutter 3.29+ (stable channel)
+- Android device running Android 9+ (API 28+)
+- Health Connect installed on device
+- (Optional) Gemini API key from [Google AI Studio](https://aistudio.google.com/)
 
-### Install
+### Run
+
 ```bash
 flutter pub get
 flutter run --debug
 ```
 
-### Firebase (optional — for cloud backup)
-1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Add an Android app with package name `com.example.nudge`
-3. Add your debug SHA-1 fingerprint (required for Google Sign-In):
-   ```powershell
-   keytool -list -v -keystore "$env:USERPROFILE\.android\debug.keystore" -alias androiddebugkey -storepass android -keypass android
-   ```
-4. Download `google-services.json` → place at `android/app/google-services.json`
-5. Enable **Google Sign-In** in Firebase Console → Authentication → Sign-in methods
-6. Create a **Firestore** database and set these security rules:
-   ```
-   rules_version = '2';
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       match /users/{uid}/{document=**} {
-         allow read, write: if request.auth != null && request.auth.uid == uid;
-       }
-     }
-   }
-   ```
+#### Windows (if flutter not on PATH)
+```
+"F:\Development\Flutter\flutter_windows_3.29.3-stable\flutter\bin\flutter.bat" run --debug
+```
 
-### Gemini AI
-Add your Gemini API key in the app: Settings → AI → API Key
+### First Launch
+The 12-step onboarding wizard runs. Every step can be skipped. Most features work without a Gemini API key.
 
----
-
-## Platform Notes
-
-**Android only.** The following are Android-specific and will break an iOS build:
-- `usage_stats` — requires `UsageStatsManager` (Android only)
-- `installed_apps` — Android only
-- `RevolutNotificationService` — `NotificationListenerService` (Android only)
-
----
-
-## External Data Sources
-
-- **Exercise Database**: [yuhonas/free-exercise-db](https://github.com/yuhonas/free-exercise-db) — Public Domain. Used for exercise thumbnails and instructions.
+### Health Connect Permissions
+Grant permissions when prompted. If denied, re-grant from: **Settings → Health Centre → Manage Permissions**.
 
 ---
 
 ## Privacy
 
-- All app data lives in Hive on your device
-- Cloud backup is opt-in and requires explicit user action
-- Backups are AES-256-CBC encrypted with your passphrase before leaving the device
-- Google Sign-In provides only a stable UID for storage namespacing — no app content is shared with Google
-- Signing out of Google does not delete or affect local data
+- **All data is local** — stored in Hive on your device
+- **No analytics, no ads, no telemetry**
+- **No Nudge servers** — the app does not connect to any Nudge-owned backend
+- **AI is opt-in** — Gemini features only activate when you provide your own API key
+- **SMS parsing is local** — no SMS content is ever transmitted
+
+---
+
+## Modules
+
+Enable or disable modules in onboarding Step 10 or **Settings → Modules**:
+
+| Module | Default | Description |
+|--------|---------|-------------|
+| Gym & Fitness | On | Workout logging + AI coach |
+| Food & Nutrition | On | Meal logging + macros |
+| Finance | On | Expense tracking + AI plan |
+| Movies | On | Watch log |
+| Books | On | Reading tracker |
+| Pomodoro | On | Focus timer |
+| Protected Habits | On | PIN-protected accountability habits |
+| Digital Detox | On | App usage monitoring |

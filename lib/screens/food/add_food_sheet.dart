@@ -10,7 +10,9 @@ import 'package:nudge/utils/nudge_theme_extension.dart';
 import 'meal_selector.dart';
 
 class AddFoodSheet extends StatefulWidget {
-  const AddFoodSheet({super.key});
+  final String? initialMeal;
+  final String? initialDescription;
+  const AddFoodSheet({super.key, this.initialMeal, this.initialDescription});
 
   @override
   State<AddFoodSheet> createState() => _AddFoodSheetState();
@@ -40,10 +42,14 @@ class _AddFoodSheetState extends State<AddFoodSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedMeal = _getInitialMeal();
+    _selectedMeal = widget.initialMeal ?? _getInitialMeal();
     _ctrl.addListener(_onSearchChanged);
     _loadInitialHistory();
     _loadTemplates();
+    if (widget.initialDescription != null && widget.initialDescription!.isNotEmpty) {
+      _ctrl.text = widget.initialDescription!;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _parseText());
+    }
   }
 
   Future<void> _loadInitialHistory() async {
@@ -225,10 +231,11 @@ class _AddFoodSheetState extends State<AddFoodSheet> {
         color: theme?.cardBg ?? NudgeTokens.elevated,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Row(
             children: [
               Text(
@@ -478,6 +485,7 @@ class _AddFoodSheetState extends State<AddFoodSheet> {
             ),
           ],
         ],
+        ),
       ),
     );
   }

@@ -1,6 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'dart:math' as math;
+import 'package:path_provider/path_provider.dart';
 import '../storage.dart';
 
 class HealthService {
@@ -79,7 +82,8 @@ class HealthService {
     if (!await isEnabled()) return [];
     try {
       final now = DateTime.now();
-      final s = start ?? dayBoundaryStart();
+      // Use 1 minute buffer to ensure boundary points (exactly at midnight) are caught
+      final s = (start ?? dayBoundaryStart()).subtract(const Duration(minutes: 1));
       final e = end ?? now;
 
       List<HealthDataPoint> healthData = await health.getHealthDataFromTypes(
@@ -124,6 +128,13 @@ class HealthService {
       final stepPointsBySource = <String, List<HealthDataPoint>>{};
 
       final now = start ?? DateTime.now();
+      final traceLogs = <String>[];
+
+      void trace(String msg) {
+        final m = '[HEALTH_TRACE] $msg';
+        traceLogs.add(m);
+        debugPrint(m);
+      }
 
       // ── FETCH GYM SESSIONS FIRST so they're available for step dedup ──
       final sessions = await syncHCWorkoutSessions(now);
@@ -133,9 +144,25 @@ class HealthService {
         final value = point.value;
         if (value is NumericHealthValue) {
           val = value.numericValue.toDouble();
+          final sName = point.sourceName.toLowerCase();
+          final sId = point.sourceId.toLowerCase();
+          final isSH = sName.contains('sec.android') || 
+                       sId.contains('sec.android') ||
+                       sName.contains('samsung') ||
+                       sName.contains('shealth') ||
+                       sName == 'android';
+          
+          if (point.type == HealthDataType.STEPS) {
+            trace('Step Point: $val | S: ${point.sourceName} [${point.sourceId}] | ${point.dateFrom} - ${point.dateTo}');
+          } else if (isSH && point.type != HealthDataType.HEART_RATE) {
+            trace('SH Point: ${point.type.name} = $val | S: ${point.sourceName} [${point.sourceId}] | ${point.dateFrom}');
+          }
         } else if (value is WorkoutHealthValue) {
           if (point.type == HealthDataType.WORKOUT) {
             val = (value.totalEnergyBurned ?? 0).toDouble();
+          } else if (point.type == HealthDataType.STEPS) {
+             val = (value.totalSteps ?? 0).toDouble();
+             trace('SH Workout Steps: $val | S: ${point.sourceName} | ${point.dateFrom}');
           } else {
              val = (value.totalDistance ?? 0).toDouble();
           }
@@ -147,7 +174,13 @@ class HealthService {
           }
         }
 
-        final source = point.sourceName.trim().isEmpty ? 'Unknown Source' : point.sourceName;
+        final name = point.sourceName.trim();
+        final id = point.sourceId.trim();
+        // If name is too generic (like 'android') or empty, prefer the ID if available
+        String source = name.isEmpty ? (id.isEmpty ? 'Unknown Source' : id) : name;
+        if ((source.toLowerCase() == 'android' || source.isEmpty) && id.isNotEmpty) {
+          source = id;
+        }
         if (!grouped.containsKey(source)) {
           grouped[source] = {'steps': 0.0, 'active_cal': 0.0, 'basal_cal': 0.0, 'total_cal': 0.0, 'distance': 0.0};
         }
@@ -169,7 +202,11 @@ class HealthService {
         } else if (point.type == HealthDataType.WORKOUT) {
           final workoutValue = point.value;
           if (workoutValue is WorkoutHealthValue && workoutValue.totalEnergyBurned != null) {
-            grouped[source]!['total_cal'] = (grouped[source]!['total_cal']! + workoutValue.totalEnergyBurned!);
+            // Store separately — TOTAL_CALORIES_BURNED already includes workout energy,
+            // so adding here would double-count. Used only as fallback when no other
+            // calorie data is present from this source.
+            if (!grouped[source]!.containsKey('workout_cal')) grouped[source]!['workout_cal'] = 0.0;
+            grouped[source]!['workout_cal'] = (grouped[source]!['workout_cal']! + workoutValue.totalEnergyBurned!);
           }
         }
       }
@@ -180,29 +217,44 @@ class HealthService {
         final active = g['active_cal'] ?? 0.0;
         final basal = g['basal_cal'] ?? 0.0;
         final total = g['total_cal'] ?? 0.0;
-        g['calories'] = math.max(total, active + basal);
+        final workout = g['workout_cal'] ?? 0.0;
+        // Prefer total_cal (which already includes workout + basal from the source).
+        // Fall back to active+basal if no total, then workout-only as last resort.
+        final fromSource = math.max(total, active + basal);
+        g['calories'] = fromSource > 0 ? fromSource : workout;
 
-        // Debug: output points per source
-        debugPrint('HealthSource [$s]: steps=${g['steps']}, cal=${g['calories']}, dist=${g['distance']}, water=${g['water'] ?? 0.0}');
+        trace('Source Summary [$s]: steps=${g['steps']}, cal=${g['calories']} (total=$total active=$active basal=$basal workout=$workout), dist=${g['distance']}');
       }
 
-      debugPrint('Health Connect: Fetched ${healthData.length} points across ${grouped.length} sources.');
+      debugPrint('Health Connect: Fetched ${healthData.length} points across ${grouped.length} sources: ${grouped.keys.toList()}');
 
       double finalCal = 0.0;
       double finalDist = 0.0;
       double finalWater = 0.0;
 
+      // Save categories present in this fetch for dynamic priority sheet
+      final seenCats = grouped.keys
+          .where((s) => s != 'Aggregated')
+          .map(sourceCategory)
+          .toSet()
+          .toList();
+      if (seenCats.isNotEmpty) {
+        AppStorage.settingsBox.put('step_seen_categories', seenCats);
+      }
+
       // ── PRIORITY-BASED BEST SOURCE ──
       final String? bestSource = _findBestSourceByPriority(grouped);
+      trace('Best source identified: $bestSource');
 
       // ── PRIORITY-BASED STEP DEDUPLICATION ──
-      // Sources are processed in user-configured priority order.
+      // Sources are processed in user-configured priority order (pinned source first).
       // The highest-priority enabled source is fully trusted; lower-priority
       // sources only fill time windows not already covered.
       final (double dedupSteps, Set<String> countedPointKeys) =
-          _computeDeduplicatedStepsByPriority(stepPointsBySource, sessions);
+          _computeDeduplicatedStepsByPriority(stepPointsBySource, sessions,
+              pinnedSource: getPinnedSource());
       double finalSteps = dedupSteps;
-      debugPrint('Deduplicated steps: $finalSteps (bestSource=$bestSource)');
+      trace('Deduplicated steps result: $finalSteps');
 
       // Fallback: if dedup gave 0 but HC has data, use getTotalStepsInInterval.
       // Handles Samsung Health writing steps under an unexpected sourceName.
@@ -211,9 +263,17 @@ class HealthService {
           final s = start ?? dayBoundaryStart();
           final e = end ?? DateTime.now();
           final hcTotal = await health.getTotalStepsInInterval(s, e);
-          if (hcTotal != null && hcTotal > 0) {
+          if (hcTotal != null && hcTotal > finalSteps) {
+            final double diff = hcTotal.toDouble() - finalSteps;
             finalSteps = hcTotal.toDouble();
-            debugPrint('Using getTotalStepsInInterval fallback: $finalSteps');
+            debugPrint('Using getTotalStepsInInterval fallback: $finalSteps (diff: $diff)');
+            
+            // Attribute the difference to the best source so it shows in UI
+            final targetSrc = bestSource ?? 'Samsung Health';
+            if (!grouped.containsKey(targetSrc)) {
+              grouped[targetSrc] = {'steps': 0.0, 'active_cal': 0.0, 'basal_cal': 0.0, 'total_cal': 0.0, 'distance': 0.0};
+            }
+            grouped[targetSrc]!['steps'] = (grouped[targetSrc]!['steps'] ?? 0.0) + diff;
           }
         } catch (_) {}
       }
@@ -229,13 +289,11 @@ class HealthService {
         }
       }
 
-      // ── PRIORITY-BASED CALORIES (not max-across-sources) ──
-      // Take calories from the highest-priority enabled source that has data.
-      // Fallback to max only if no priority source has calorie data.
-      if (bestSource != null && (grouped[bestSource]?['calories'] ?? 0) > 0) {
-        finalCal = grouped[bestSource]!['calories']!;
-      } else if (grouped.isNotEmpty) {
-        finalCal = grouped.values.map((v) => v['calories']!).reduce(math.max);
+      // ── CALORIES: max across all sources so wearable direct data is never lost ──
+      if (grouped.isNotEmpty) {
+        finalCal = grouped.values
+            .map((v) => v['calories'] ?? 0.0)
+            .fold(0.0, math.max);
       }
       if (grouped.isNotEmpty) {
         if (finalDist == 0) {
@@ -265,8 +323,8 @@ class HealthService {
         }
       }
 
-      // Final Calories: Use session calories if available
-      if (runningCal + workoutCal > 0) {
+      // Final Calories: take higher of source-reported calories vs session-derived
+      if (runningCal + workoutCal > finalCal) {
         finalCal = runningCal + workoutCal;
       }
 
@@ -309,6 +367,7 @@ class HealthService {
         'bestSource': bestSource ?? 'Aggregated',
         'water_today': await getTodayWater(),
         'countedPointKeys': countedPointKeys, // Set<String> for raw-data highlighting
+        'traceLogs': traceLogs,
       };
     } catch (e) {
       debugPrint('Health Connect Fetch Error: $e');
@@ -325,19 +384,22 @@ class HealthService {
   /// "${sourceName}_${dateFrom.millisecondsSinceEpoch}".
   static (double, Set<String>) _computeDeduplicatedStepsByPriority(
     Map<String, List<HealthDataPoint>> stepPointsBySource,
-    List<Map<String, dynamic>> gymSessions,
-  ) {
+    List<Map<String, dynamic>> gymSessions, {
+    String? pinnedSource,
+  }) {
     if (stepPointsBySource.isEmpty) return (0.0, {});
 
     final priority = getSourcePriority();
     final disabled = getDisabledSources();
     final countedKeys = <String>{};
 
-    // Sort sources by category priority; skip disabled categories
+    // Sort sources by category priority; pinned source always goes first
     final orderedSources = stepPointsBySource.keys
         .where((src) => !disabled.contains(sourceCategory(src)))
         .toList()
       ..sort((a, b) {
+          if (a == pinnedSource) return -1;
+          if (b == pinnedSource) return 1;
           final ia = priority.indexOf(sourceCategory(a));
           final ib = priority.indexOf(sourceCategory(b));
           return (ia < 0 ? 999 : ia).compareTo(ib < 0 ? 999 : ib);
@@ -374,8 +436,13 @@ class HealthService {
 
       for (final p in points) {
         final v = p.value;
-        if (v is! NumericHealthValue) continue;
-        final steps = v.numericValue.toDouble();
+        double steps = 0.0;
+        if (v is NumericHealthValue) {
+          steps = v.numericValue.toDouble();
+        } else if (v is WorkoutHealthValue) {
+          steps = (v.totalSteps ?? 0).toDouble();
+        }
+        
         if (steps <= 0) continue;
 
         final from = p.dateFrom;
@@ -508,22 +575,26 @@ class HealthService {
     final lower = sourceName.toLowerCase();
     if (lower.contains('watch') || lower.contains('wear') ||
         lower.contains('garmin') || lower.contains('fitbit')) return 'watch';
-    if (lower.contains('samsung') || lower.contains('shealth')) return 'samsung_health';
+    if (lower.contains('samsung') || lower.contains('shealth') || 
+        lower.contains('sec.android')) return 'samsung_health';
     if (lower.contains('google') || lower.contains('fitness')) return 'google_fit';
     return 'other';
   }
 
   static List<String> getSourcePriority() {
+    final seen = getSeenCategories();
     final raw = AppStorage.settingsBox.get('health_source_priority');
     if (raw is List) {
-      final list = raw.cast<String>().toList();
-      // Ensure all categories are present
-      for (final cat in defaultSourcePriority) {
-        if (!list.contains(cat)) list.add(cat);
+      final saved = raw.cast<String>().toList();
+      // Keep user-saved ordering but restrict to categories actually in data
+      final result = saved.where((c) => seen.contains(c)).toList();
+      // Append any newly-seen categories not yet in saved order
+      for (final cat in seen) {
+        if (!result.contains(cat)) result.add(cat);
       }
-      return list;
+      return result;
     }
-    return List.from(defaultSourcePriority);
+    return List.from(seen);
   }
 
   static Future<void> setSourcePriority(List<String> priority) async {
@@ -538,6 +609,28 @@ class HealthService {
 
   static Future<void> setDisabledSources(Set<String> disabled) async {
     await AppStorage.settingsBox.put('health_source_disabled', disabled.toList());
+  }
+
+  /// Returns the categories seen in the most recent data fetch.
+  /// Falls back to defaultSourcePriority if no fetch has run yet.
+  static List<String> getSeenCategories() {
+    final raw = AppStorage.settingsBox.get('step_seen_categories');
+    if (raw is List && raw.isNotEmpty) return raw.cast<String>().toList();
+    return List.from(defaultSourcePriority);
+  }
+
+  /// Source key the user has manually pinned as their primary step source.
+  static String? getPinnedSource() {
+    return AppStorage.settingsBox.get('step_pinned_source') as String?;
+  }
+
+  /// Pins [src] as the primary step source. Pass null to clear the pin.
+  static Future<void> setPinnedSource(String? src) async {
+    if (src == null) {
+      await AppStorage.settingsBox.delete('step_pinned_source');
+    } else {
+      await AppStorage.settingsBox.put('step_pinned_source', src);
+    }
   }
 
   // ── Day boundary ──────────────────────────────────────────────────────────
@@ -633,6 +726,12 @@ class HealthService {
 
   /// Returns the highest-priority enabled source that has step data.
   static String? _findBestSourceByPriority(Map<String, Map<String, double>> grouped) {
+    // User-pinned source wins unconditionally
+    final pinned = getPinnedSource();
+    if (pinned != null && pinned != 'Aggregated' &&
+        grouped.containsKey(pinned) && (grouped[pinned]?['steps'] ?? 0) > 0) {
+      return pinned;
+    }
     final priority = getSourcePriority();
     final disabled = getDisabledSources();
     for (final cat in priority) {
@@ -647,16 +746,17 @@ class HealthService {
   }
 
   static String cleanSource(String source) {
-    if (source.contains('shealth')) return 'Samsung Health';
-    if (source.contains('google.android.apps.fitness')) return 'Google Fit';
-    if (source.contains('hevy')) return 'Hevy';
-    if (source.contains('strong')) return 'Strong';
-    if (source.contains('healthconnect')) return 'Health Connect';
-    if (source.contains('fitbit')) return 'Fitbit';
-    if (source.contains('garmin')) return 'Garmin Connect';
-    if (source.contains('strava')) return 'Strava';
-    if (source.contains('myfitnesspal')) return 'MyFitnessPal';
-    if (source.contains('wearos') || source.contains('wear')) return 'Wear OS watch';
+    final lower = source.toLowerCase();
+    if (lower.contains('shealth') || lower.contains('samsung') || lower.contains('sec.android')) return 'Samsung Health';
+    if (lower.contains('google.android.apps.fitness')) return 'Google Fit';
+    if (lower.contains('hevy')) return 'Hevy';
+    if (lower.contains('strong')) return 'Strong';
+    if (lower.contains('healthconnect')) return 'Health Connect';
+    if (lower.contains('fitbit')) return 'Fitbit';
+    if (lower.contains('garmin')) return 'Garmin Connect';
+    if (lower.contains('strava')) return 'Strava';
+    if (lower.contains('myfitnesspal')) return 'MyFitnessPal';
+    if (lower.contains('wearos') || lower.contains('wear')) return 'Wear OS watch';
     final parts = source.split('.');
     if (parts.length > 1) {
       final name = parts.last;
@@ -885,7 +985,7 @@ class HealthService {
       // use wider tolerance (10 min) and keep the one with more data.
       bool isSamsungSource(String src) {
         final s = src.toLowerCase();
-        return s.contains('shealth') || s.contains('samsung');
+        return s.contains('shealth') || s.contains('samsung') || s.contains('sec.android');
       }
 
       final uniqueSessions = <Map<String, dynamic>>[];
@@ -1235,13 +1335,77 @@ class HealthService {
       for (var p in points) {
         final sb = StringBuffer();
         sb.writeln("[${p.type.name}] ${p.dateFrom} | ${p.sourceName}");
-        sb.writeln("  Value: ${p.value}");
+        final val = p.value;
+        if (val is WorkoutHealthValue) {
+          sb.writeln("  Value: Workout (Steps: ${val.totalSteps}, Cal: ${val.totalEnergyBurned}, Dist: ${val.totalDistance})");
+        } else {
+          sb.writeln("  Value: $val");
+        }
         sb.writeln("  Unit: ${p.unitString}");
         result.add(sb.toString());
       }
       return result;
     } catch (e) {
       return ["Deep Dump Error: $e"];
+    }
+  }
+
+  static Future<String> exportRawDataToJSON({DateTime? start, DateTime? end}) async {
+    if (!await isEnabled()) return "[]";
+    try {
+      final s = start ?? DateTime.now().subtract(const Duration(days: 30));
+      final e = end ?? DateTime.now();
+      
+      final points = await health.getHealthDataFromTypes(
+        startTime: s,
+        endTime: e,
+        types: debugTypes,
+      );
+
+      final List<Map<String, dynamic>> jsonList = points.map((p) {
+        final v = p.value;
+        dynamic valMap;
+        if (v is NumericHealthValue) {
+          valMap = {'type': 'numeric', 'value': v.numericValue.toDouble()};
+        } else if (v is WorkoutHealthValue) {
+          valMap = {
+            'type': 'workout',
+            'steps': v.totalSteps,
+            'calories': v.totalEnergyBurned,
+            'distance': v.totalDistance,
+            'activity': v.workoutActivityType.name,
+          };
+        } else {
+          valMap = {'type': 'other', 'value': v.toString()};
+        }
+
+        return {
+          'type': p.type.name,
+          'from': p.dateFrom.toIso8601String(),
+          'to': p.dateTo.toIso8601String(),
+          'source': p.sourceName,
+          'package': p.sourceId,
+          'value': valMap,
+          'unit': p.unitString,
+        };
+      }).toList();
+
+      return jsonEncode(jsonList);
+    } catch (e) {
+      return jsonEncode([{'error': e.toString()}]);
+    }
+  }
+
+  static Future<String> saveHealthDump() async {
+    try {
+      // Default to last 30 days for deep analysis
+      final json = await exportRawDataToJSON();
+      final cacheDir = await getTemporaryDirectory();
+      final file = File('${cacheDir.path}/health_dump.json');
+      await file.writeAsString(json);
+      return file.path;
+    } catch (e) {
+      return "Error: $e";
     }
   }
 }

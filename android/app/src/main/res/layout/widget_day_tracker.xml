@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- Header: accent bar + title -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:layout_width="3dp"
+            android:layout_height="12dp"
+            android:background="#7C4DFF"
+            android:layout_marginEnd="8dp"
+            android:contentDescription="@null"/>
+
+        <TextView
+            android:id="@+id/tracker_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Year"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+
+        <TextView
+            android:id="@+id/tracker_stats"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0 / 365"
+            android:textColor="#5A7582"
+            android:textSize="10sp"/>
+    </LinearLayout>
+
+    <!-- Dot grid fills remaining space -->
+    <ImageView
+        android:id="@+id/tracker_dots"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="8dp"
+        android:scaleType="fitStart"
+        android:contentDescription="@null"/>
+
+    <!-- Progress bar -->
+    <ProgressBar
+        android:id="@+id/tracker_progress"
+        style="@android:style/Widget.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:progressDrawable="@drawable/widget_progress_purple"
+        android:max="100"
+        android:progress="0"/>
+
+    <!-- Stats row -->
+    <TextView
+        android:id="@+id/tracker_rem"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="365 days left · 0%"
+        android:textColor="#B0C4CF"
+        android:textSize="11sp"/>
+
+</LinearLayout>

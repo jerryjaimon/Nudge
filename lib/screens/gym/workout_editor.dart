@@ -37,6 +37,14 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
   static const int _restTotal = 60;
   Timer? _restTimer;
 
+  // Exercise timers: exName → {startTime, elapsed, running}
+  final Map<String, Map<String, dynamic>> _exTimers = {};
+  Timer? _exClockTimer;
+
+  late DateTime _workoutStartedAt;
+  Timer? _elapsedTimer;
+  String _elapsedLabel = '0:00';
+
   @override
   void initState() {
     super.initState();
@@ -47,6 +55,19 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
         .toList();
     _noteCtrl.text = (init?['note'] as String?) ?? '';
     _caloriesCtrl.text = ((init?['calories'] as num?)?.toInt() ?? 0).toString();
+    _workoutStartedAt = DateTime.tryParse((init?['startedAt'] as String?) ?? '') ?? DateTime.now();
+    _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final secs = DateTime.now().difference(_workoutStartedAt).inSeconds;
+      final h = secs ~/ 3600;
+      final m = (secs % 3600) ~/ 60;
+      final s = secs % 60;
+      setState(() {
+        _elapsedLabel = h > 0
+            ? '${h}h ${m.toString().padLeft(2, '0')}m'
+            : '${m}:${s.toString().padLeft(2, '0')}';
+      });
+    });
   }
 
   /// Ensure every set map has a 'done' bool field.
@@ -67,6 +88,8 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
     _noteCtrl.dispose();
     _caloriesCtrl.dispose();
     _restTimer?.cancel();
+    _elapsedTimer?.cancel();
+    _exClockTimer?.cancel();
     super.dispose();
   }
 
@@ -95,6 +118,39 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
   void _skipRest() {
     _restTimer?.cancel();
     setState(() => _restActive = false);
+  }
+
+  void _toggleExerciseTimer(String name) {
+    setState(() {
+      final t = _exTimers[name];
+      if (t != null && t['running'] as bool) {
+        t['running'] = false;
+        _exClockTimer?.cancel();
+        _exClockTimer = null;
+        // Keep elapsed shown until next start
+      } else {
+        _exTimers[name] = {
+          'startTime': DateTime.now(),
+          'elapsed': '0:00',
+          'running': true,
+        };
+        _exClockTimer?.cancel();
+        _exClockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (!mounted) return;
+          setState(() {
+            for (final entry in _exTimers.entries) {
+              if (entry.value['running'] as bool) {
+                final start = entry.value['startTime'] as DateTime;
+                final secs = DateTime.now().difference(start).inSeconds;
+                final m = secs ~/ 60;
+                final s = secs % 60;
+                entry.value['elapsed'] = '$m:${s.toString().padLeft(2, '0')}';
+              }
+            }
+          });
+        });
+      }
+    });
   }
 
   // ─── Text import ─────────────────────────────────────────────────────────
@@ -376,10 +432,10 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
   }
 
   void _done() {
-    // Strip internal 'done' field before persisting
+    // Preserve 'done' field so ticked sets remain ticked on re-open
     final cleanExercises = _exercises.map((ex) {
       final sets = ((ex['sets'] as List?) ?? []).map((s) {
-        return Map<String, dynamic>.from(s as Map)..remove('done');
+        return Map<String, dynamic>.from(s as Map);
       }).toList();
       return Map<String, dynamic>.from(ex)..['sets'] = sets;
     }).toList();
@@ -395,9 +451,146 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
       'calories': int.tryParse(_caloriesCtrl.text.trim()) ?? 0,
       'exercises': cleanExercises,
       'cardio': _cardio,
+      'startedAt': _workoutStartedAt.toIso8601String(),
+      'durationSeconds': DateTime.now().difference(_workoutStartedAt).inSeconds,
       if (widget.initialWorkout?['hcSessions'] != null)
         'hcSessions': widget.initialWorkout!['hcSessions'],
     });
+  }
+
+  void _stopWorkout() {
+    _elapsedTimer?.cancel();
+    setState(() {});
+
+    final doneSets = _doneSets;
+    final totalSets = _totalSets;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: NudgeTokens.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36, height: 4,
+                    decoration: BoxDecoration(
+                      color: NudgeTokens.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(children: [
+                  const Icon(Icons.stop_circle_rounded, color: NudgeTokens.gymB, size: 22),
+                  const SizedBox(width: 10),
+                  Text('Session Summary',
+                      style: const TextStyle(
+                          color: NudgeTokens.textHigh,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18)),
+                ]),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: NudgeTokens.elevated,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: NudgeTokens.gymB.withValues(alpha: 0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      _SummaryTile(label: 'Duration', value: _elapsedLabel, icon: Icons.timer_rounded),
+                      const SizedBox(width: 12),
+                      _SummaryTile(label: 'Sets Done', value: '$doneSets / $totalSets', icon: Icons.check_circle_rounded),
+                      const SizedBox(width: 12),
+                      _SummaryTile(label: 'Exercises', value: '${_exercises.length}', icon: Icons.fitness_center_rounded),
+                    ],
+                  ),
+                ),
+                if (_exercises.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  ..._exercises.map((ex) {
+                    final sets = (ex['sets'] as List?) ?? [];
+                    final done = sets.where((s) => (s as Map)['done'] == true).length;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.circle, color: NudgeTokens.gymB, size: 6),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(ex['name'] as String? ?? '',
+                                style: const TextStyle(color: NudgeTokens.textMid, fontSize: 13)),
+                          ),
+                          Text('$done/${sets.length} sets',
+                              style: const TextStyle(color: NudgeTokens.gymB, fontSize: 12, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          // Resume timer — continue counting from the same start time
+                          _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+                            if (!mounted) return;
+                            final secs = DateTime.now().difference(_workoutStartedAt).inSeconds;
+                            final h = secs ~/ 3600;
+                            final m = (secs % 3600) ~/ 60;
+                            final s = secs % 60;
+                            setState(() {
+                              _elapsedLabel = h > 0
+                                  ? '${h}h ${m.toString().padLeft(2, '0')}m'
+                                  : '${m}:${s.toString().padLeft(2, '0')}';
+                            });
+                          });
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: NudgeTokens.textMid,
+                          side: const BorderSide(color: NudgeTokens.border),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('Resume', style: TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _done();
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: NudgeTokens.gymB,
+                          foregroundColor: NudgeTokens.gymA,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('Save & Exit', style: TextStyle(fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _delete() {
@@ -472,11 +665,24 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
                   onCancel: _confirmDiscard,
                   onFinish: _done,
                   onImport: _importFromText,
+                  onStop: _stopWorkout,
+                  elapsedLabel: _elapsedLabel,
+                ),
+                // Rest timer appears inline below AppBar — no overlap with content
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                  child: _restActive
+                      ? _RestTimerBanner(
+                          remaining: _restRemaining,
+                          total: _restTotal,
+                          onSkip: _skipRest,
+                        )
+                      : const SizedBox.shrink(),
                 ),
                 Expanded(
                   child: ListView(
-                    padding: EdgeInsets.fromLTRB(
-                        16, 16, 16, _restActive ? 120 : 40),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
                     children: [
                       // Exercise cards
                       ...List.generate(_exercises.length, (idx) {
@@ -486,6 +692,9 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
                             .map((s) =>
                                 Map<String, dynamic>.from(s as Map))
                             .toList();
+                        final timerData = _exTimers[name];
+                        final timerRunning = timerData?['running'] as bool? ?? false;
+                        final timerElapsed = timerData?['elapsed'] as String? ?? '';
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: _ExerciseCard(
@@ -494,6 +703,8 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
                             sets: sets,
                             prevSets: _prevSetsFor(name),
                             prevLabel: _prevSessionLabel(name),
+                            timerRunning: timerRunning,
+                            timerElapsed: timerElapsed,
                             onRemove: () => _removeExercise(idx),
                             onAddSet: () => _addSet(idx),
                             onRemoveSet: (si) => _removeSet(idx, si),
@@ -504,13 +715,10 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
                                 _updateSetValue(idx, si,
                                     reps: reps, weight: weight),
                             onRenameTap: () => _renameExercise(idx),
+                            onToggleTimer: () => _toggleExerciseTimer(name),
                           ),
                         );
                       }),
-
-                      // Add Exercise button
-                      _AddExerciseButton(onTap: _addExercise),
-                      const SizedBox(height: 16),
 
                       // Optional note
                       _NoteField(controller: _noteCtrl),
@@ -543,23 +751,51 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
             ),
           ),
 
-          // ── Rest timer (slides up from bottom) ───────────────────────────
+          // ── Add Exercise bar (fixed at bottom) ───────────────────────
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            child: AnimatedSlide(
-              offset:
-                  _restActive ? Offset.zero : const Offset(0, 1),
-              duration: const Duration(milliseconds: 320),
-              curve: Curves.easeOutCubic,
-              child: _RestTimerBanner(
-                remaining: _restRemaining,
-                total: _restTotal,
-                onSkip: _skipRest,
+            child: Container(
+              decoration: const BoxDecoration(
+                color: NudgeTokens.card,
+                border: Border(top: BorderSide(color: NudgeTokens.border)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: GestureDetector(
+                  onTap: _addExercise,
+                  child: Container(
+                    margin: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      color: NudgeTokens.gymB.withValues(alpha: 0.10),
+                      border: Border.all(
+                        color: NudgeTokens.gymB.withValues(alpha: 0.30),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_rounded, size: 18, color: NudgeTokens.gymB),
+                        SizedBox(width: 8),
+                        Text(
+                          'Add Exercise',
+                          style: TextStyle(
+                            color: NudgeTokens.gymB,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
+
         ],
       ),
     ));
@@ -576,6 +812,8 @@ class _AppBar extends StatelessWidget {
   final VoidCallback onCancel;
   final VoidCallback onFinish;
   final VoidCallback onImport;
+  final VoidCallback onStop;
+  final String elapsedLabel;
 
   const _AppBar({
     required this.dayLabel,
@@ -585,6 +823,8 @@ class _AppBar extends StatelessWidget {
     required this.onCancel,
     required this.onFinish,
     required this.onImport,
+    required this.onStop,
+    required this.elapsedLabel,
   });
 
   @override
@@ -640,6 +880,26 @@ class _AppBar extends StatelessWidget {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 2),
+                      GestureDetector(
+                        onTap: onStop,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              elapsedLabel,
+                              style: const TextStyle(
+                                color: NudgeTokens.gymB,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.stop_circle_rounded,
+                                color: NudgeTokens.gymB, size: 13),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -678,12 +938,15 @@ class _ExerciseCard extends StatefulWidget {
   final List<Map<String, dynamic>> sets;
   final List<Map<String, dynamic>> prevSets;
   final String prevLabel;
+  final bool timerRunning;
+  final String timerElapsed;
   final VoidCallback onRemove;
   final VoidCallback onAddSet;
   final void Function(int) onRemoveSet;
   final void Function(int) onToggleDone;
   final void Function(int, {int? reps, double? weight}) onUpdateSet;
   final VoidCallback? onRenameTap;
+  final VoidCallback onToggleTimer;
 
   const _ExerciseCard({
     super.key,
@@ -691,12 +954,15 @@ class _ExerciseCard extends StatefulWidget {
     required this.sets,
     required this.prevSets,
     required this.prevLabel,
+    required this.timerRunning,
+    required this.timerElapsed,
     required this.onRemove,
     required this.onAddSet,
     required this.onRemoveSet,
     required this.onToggleDone,
     required this.onUpdateSet,
     this.onRenameTap,
+    required this.onToggleTimer,
   });
 
   @override
@@ -858,6 +1124,52 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                     style: IconButton.styleFrom(foregroundColor: NudgeTokens.textLow),
                     tooltip: 'Change exercise',
                   ),
+                // Timer button
+                GestureDetector(
+                  onTap: widget.onToggleTimer,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: widget.timerRunning
+                          ? NudgeTokens.gymB.withValues(alpha: 0.18)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: widget.timerRunning
+                            ? NudgeTokens.gymB.withValues(alpha: 0.4)
+                            : NudgeTokens.border,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          widget.timerRunning
+                              ? Icons.stop_rounded
+                              : Icons.timer_outlined,
+                          size: 14,
+                          color: widget.timerRunning
+                              ? NudgeTokens.gymB
+                              : NudgeTokens.textLow,
+                        ),
+                        if (widget.timerElapsed.isNotEmpty) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            widget.timerElapsed,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: widget.timerRunning
+                                  ? NudgeTokens.gymB
+                                  : NudgeTokens.textMid,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(width: 4),
                 IconButton(
                   onPressed: widget.onRemove,
@@ -920,14 +1232,25 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                 prevBestWeight = w;
               }
             }
-            return _SetRow(
+            final canRemove = widget.sets.length > 1;
+            return Dismissible(
+              key: ValueKey('set_${widget.name}_$si'),
+              direction: canRemove ? DismissDirection.endToStart : DismissDirection.none,
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 20),
+                color: NudgeTokens.red.withValues(alpha: 0.15),
+                child: const Icon(Icons.delete_outline_rounded, color: NudgeTokens.red, size: 20),
+              ),
+              onDismissed: (_) => widget.onRemoveSet(si),
+              child: _SetRow(
               index: si,
               done: done,
               prevText: _fmtPrev(si),
               prevBestWeight: prevBestWeight,
               repsCtrl: _repsCtrl[si],
               weightCtrl: _weightCtrl[si],
-              canRemove: widget.sets.length > 1,
+              canRemove: canRemove,
               onToggleDone: () => widget.onToggleDone(si),
               onRemove: () => widget.onRemoveSet(si),
               onRepsChanged: (v) {
@@ -942,6 +1265,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                   widget.onUpdateSet(si, weight: n.clamp(0.0, 999.0));
                 }
               },
+            ),
             );
           }),
 
@@ -1205,8 +1529,7 @@ class _RestTimerBanner extends StatelessWidget {
         '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
 
     return Container(
-      padding: EdgeInsets.fromLTRB(
-          20, 14, 20, 14 + MediaQuery.of(context).padding.bottom),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
       decoration: const BoxDecoration(
         color: NudgeTokens.gymA,
         border: Border(
@@ -1345,37 +1668,36 @@ class _CaloriesField extends StatelessWidget {
   }
 }
 
-// ─── Add Exercise button ──────────────────────────────────────────────────────
 
-class _AddExerciseButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _AddExerciseButton({required this.onTap});
+// ─── Session summary tile ─────────────────────────────────────────────────────
+
+class _SummaryTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+
+  const _SummaryTile({required this.label, required this.value, required this.icon});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
+    return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: NudgeTokens.elevated,
-          border: Border.all(color: NudgeTokens.borderHi),
+          color: NudgeTokens.gymB.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
         ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Column(
           children: [
-            Icon(Icons.add_circle_outline_rounded,
-                color: NudgeTokens.gymB, size: 20),
-            SizedBox(width: 8),
-            Text(
-              'Add Exercise',
-              style: TextStyle(
-                color: NudgeTokens.gymB,
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
-              ),
-            ),
+            Icon(icon, color: NudgeTokens.gymB, size: 18),
+            const SizedBox(height: 4),
+            Text(value,
+                style: const TextStyle(
+                    color: NudgeTokens.textHigh,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14)),
+            Text(label,
+                style: const TextStyle(color: NudgeTokens.textLow, fontSize: 10)),
           ],
         ),
       ),

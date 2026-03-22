@@ -9,7 +9,7 @@ import android.widget.RemoteViews
 
 class HabitsWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        val sp      = context.getSharedPreferences("HomeWidgetPlugin", Context.MODE_PRIVATE)
+        val sp      = context.getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
         val done    = sp.getString("habits_done", "0") ?: "0"
         val total   = sp.getString("habits_total", "/ 0 habits") ?: "/ 0 habits"
         val percent = sp.getInt("habits_percent", 0)

@@ -7,10 +7,12 @@ import 'package:hive/hive.dart';
 import '../../storage.dart';
 import '../../app.dart' show NudgeTokens;
 import '../../utils/notification_service.dart';
+import 'package:uuid/uuid.dart';
 import '../protected/habit_card.dart';
 import '../protected/habit_routine_card.dart';
 import '../protected/habit_editor_sheet.dart';
 import '../protected/habit_detail_screen.dart';
+import '../protected/protected_gate.dart';
 
 class MyHabitsScreen extends StatefulWidget {
   const MyHabitsScreen({super.key});
@@ -238,6 +240,41 @@ class _MyHabitsScreenState extends State<MyHabitsScreen> {
     return count >= target;
   }
 
+  // ── templates ─────────────────────────────────────────────────────────────
+
+  static const _templates = [
+    {'name': 'Morning Walk',      'emoji': '🚶', 'category': 'fitness',      'type': 'boolean', 'target': 1},
+    {'name': 'Drink Water',       'emoji': '💧', 'category': 'anytime',      'type': 'counter', 'target': 8},
+    {'name': 'Meditate',          'emoji': '🧘', 'category': 'mindfulness',  'type': 'boolean', 'target': 1},
+    {'name': 'Read',              'emoji': '📖', 'category': 'learning',     'type': 'counter', 'target': 30},
+    {'name': 'Workout',           'emoji': '🏋️', 'category': 'fitness',      'type': 'boolean', 'target': 1},
+    {'name': 'No Social Media',   'emoji': '📵', 'category': 'mindfulness',  'type': 'boolean', 'target': 1},
+    {'name': 'Sleep by 11pm',     'emoji': '🌙', 'category': 'evening',      'type': 'boolean', 'target': 1},
+    {'name': 'Journal',           'emoji': '✍️', 'category': 'evening',      'type': 'boolean', 'target': 1},
+    {'name': 'Cold Shower',       'emoji': '🚿', 'category': 'morning',      'type': 'boolean', 'target': 1},
+    {'name': 'Stretch',           'emoji': '🤸', 'category': 'fitness',      'type': 'boolean', 'target': 1},
+  ];
+
+  Future<void> _addFromTemplate(Map<String, dynamic> t) async {
+    final b = _box!;
+    final list = _habits();
+    final id = const Uuid().v4();
+    final maxOrder = list.isEmpty
+        ? 0
+        : list.map((h) => (h['sortOrder'] as int? ?? 0)).reduce((a, b) => a > b ? a : b);
+    list.add({
+      'id': id,
+      'name': '${t['emoji']} ${t['name']}',
+      'category': t['category'],
+      'type': t['type'],
+      'target': t['target'],
+      'sortOrder': maxOrder + 1,
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    await b.put(_habitsKey, list);
+    setState(() {});
+  }
+
   // ── add / edit habit ──────────────────────────────────────────────────────
 
   Future<void> _openAddHabit({Map<String, dynamic>? initial}) async {
@@ -310,7 +347,6 @@ class _MyHabitsScreenState extends State<MyHabitsScreen> {
       builder: (_) => HabitDetailScreen(
         habit: habit,
         logs: (habitLogs is Map) ? habitLogs : null,
-        isPublic: true,
       ),
     ))
         .then((_) => setState(() {}));
@@ -393,11 +429,97 @@ class _MyHabitsScreenState extends State<MyHabitsScreen> {
 
           // Habit list
           Expanded(
-            child: habits.isEmpty
-                ? const _EmptyHabits()
-                : ListView(
+            child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 80),
                     children: [
+                      // ── Templates row ────────────────────────────────────
+                      _SectionHeader(
+                        label: 'Templates',
+                        icon: Icons.auto_awesome_rounded,
+                        color: NudgeTokens.amber,
+                      ),
+                      SizedBox(
+                        height: 40,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _templates.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (_, i) {
+                            final t = _templates[i];
+                            final alreadyAdded = habits.any((h) =>
+                                (h['name'] as String?)?.contains(t['name'] as String) ?? false);
+                            return GestureDetector(
+                              onTap: alreadyAdded ? null : () => _addFromTemplate(t),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: alreadyAdded
+                                      ? NudgeTokens.surface
+                                      : NudgeTokens.amber.withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: alreadyAdded
+                                        ? NudgeTokens.border
+                                        : NudgeTokens.amber.withValues(alpha: 0.30),
+                                  ),
+                                ),
+                                child: Text(
+                                  '${t['emoji']} ${t['name']}',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: alreadyAdded ? NudgeTokens.textLow : NudgeTokens.amber,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // ── Protected Habits entry ────────────────────────────
+                      GestureDetector(
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const ProtectedGateScreen()),
+                        ),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: NudgeTokens.blue.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: NudgeTokens.blue.withValues(alpha: 0.25)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.fingerprint_rounded, color: NudgeTokens.blue, size: 22),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Protected Habits',
+                                  style: GoogleFonts.outfit(
+                                    color: NudgeTokens.textHigh,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                'Biometric lock',
+                                style: GoogleFonts.outfit(
+                                    color: NudgeTokens.textLow, fontSize: 12),
+                              ),
+                              const SizedBox(width: 6),
+                              const Icon(Icons.chevron_right_rounded,
+                                  color: NudgeTokens.textLow, size: 18),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      if (habits.isEmpty) const _EmptyHabits(),
+
                       for (final cat in _categoryOrder)
                         if (grouped.containsKey(cat)) ...[
                           _SectionHeader(
@@ -433,26 +555,20 @@ class _MyHabitsScreenState extends State<MyHabitsScreen> {
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 10),
                               child: HabitCard(
-                                habit: h,
-                                todayCount: current,
+                                title: (h['name'] as String?) ?? 'Habit',
+                                iconCode: (h['iconCode'] as int?) ?? Icons.check_circle_rounded.codePoint,
+                                count: current,
                                 last7: last7,
-                                dayIso: dayIso,
-                                onIncrement: () => _setCountForDay(
-                                    id,
-                                    dayIso,
-                                    (current + 1).clamp(0, 999999)),
-                                onDecrement: () => _setCountForDay(
-                                    id,
-                                    dayIso,
-                                    (current - 1).clamp(0, 999999)),
-                                onTap: () => _openDetail(h),
-                                onLongPress: () => _openAddHabit(initial: h),
-                                onToggle: isBoolean
+                                type: (h['type'] as String?) ?? 'counter',
+                                target: target,
+                                onTapEdit: () => _openAddHabit(initial: h),
+                                onMinus: () => _setCountForDay(
+                                    id, dayIso, (current - 1).clamp(0, 999999)),
+                                onPlus: isBoolean
                                     ? () => _setCountForDay(
-                                        id,
-                                        dayIso,
-                                        current >= target ? 0 : 1)
-                                    : null,
+                                        id, dayIso, current >= target ? 0 : 1)
+                                    : () => _setCountForDay(
+                                        id, dayIso, (current + 1).clamp(0, 999999)),
                               ),
                             );
                           }),

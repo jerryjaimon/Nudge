@@ -9,7 +9,7 @@ import android.widget.RemoteViews
 
 class GymWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        val sp = context.getSharedPreferences("HomeWidgetPlugin", Context.MODE_PRIVATE)
+        val sp = context.getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
         val streak = sp.getString("gym_streak", "0") ?: "0"
         val last   = sp.getString("gym_last", "—") ?: "—"
         val week   = sp.getString("gym_week", "0 sessions this week") ?: "0 sessions this week"

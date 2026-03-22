@@ -94,10 +94,17 @@ class _GymChatScreenState extends State<GymChatScreen> {
     _scrollToBottom();
 
     try {
+      final onboardingGoals = (AppStorage.settingsBox
+              .get('onboarding_goals', defaultValue: <dynamic>[]) as List)
+          .cast<String>();
+
       final prompt = '''
 You are a highly capable fitness assistant for "Nudge".
 The user will describe their workout session (exercises, cardio, or both).
 Extract this information into a structured JSON format.
+
+### User's Fitness Goals:
+${onboardingGoals.isEmpty ? 'Not specified' : onboardingGoals.join(', ')}
 
 ### Known Exercises for Reference:
 ${ExerciseDB.allExercises.join(', ')}

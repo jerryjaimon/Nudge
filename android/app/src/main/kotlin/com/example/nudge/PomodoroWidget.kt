@@ -9,7 +9,7 @@ import android.widget.RemoteViews
 
 class PomodoroWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        val sp       = context.getSharedPreferences("HomeWidgetPlugin", Context.MODE_PRIVATE)
+        val sp       = context.getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
         val time     = sp.getString("pomo_time", "0m") ?: "0m"
         val sessions = sp.getString("pomo_sessions", "0 sessions") ?: "0 sessions"
 

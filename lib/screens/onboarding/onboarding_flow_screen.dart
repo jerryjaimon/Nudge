@@ -614,6 +614,7 @@ Use markdown. Keep each section practical.
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: NudgeTokens.bg,
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: Column(
           children: [
@@ -3423,15 +3424,18 @@ class _Step11FitnessPlanState extends State<_Step11FitnessPlan>
   }
 
   Widget _generateButton({required VoidCallback? onTap, required String label, IconData? icon, bool disabled = false}) {
-    return FilledButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon ?? Icons.auto_awesome_rounded, size: 16, color: disabled ? NudgeTokens.textLow : Colors.white),
-      label: Text(label, style: GoogleFonts.outfit(fontSize: 14, color: disabled ? NudgeTokens.textLow : Colors.white)),
-      style: FilledButton.styleFrom(
-        backgroundColor: disabled ? NudgeTokens.surface : NudgeTokens.purple,
-        side: disabled ? const BorderSide(color: NudgeTokens.border) : null,
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon ?? Icons.auto_awesome_rounded, size: 16, color: disabled ? NudgeTokens.textLow : Colors.white),
+        label: Text(label, style: GoogleFonts.outfit(fontSize: 14, color: disabled ? NudgeTokens.textLow : Colors.white)),
+        style: FilledButton.styleFrom(
+          backgroundColor: disabled ? NudgeTokens.surface : NudgeTokens.purple,
+          side: disabled ? const BorderSide(color: NudgeTokens.border) : null,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
       ),
     );
   }

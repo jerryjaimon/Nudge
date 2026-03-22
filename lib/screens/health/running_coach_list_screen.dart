@@ -1,6 +1,6 @@
 // lib/screens/health/running_coach_list_screen.dart
 //
-// Home page for the Activity Coach feature.
+// Home page for the Cardio Coach feature.
 // Lists all recent runs (HC + GPS), lets the user validate them,
 // and taps through to RunningCoachScreen for individual analysis.
 
@@ -10,7 +10,7 @@ import 'package:fl_chart/fl_chart.dart';
 import '../../app.dart' show NudgeTokens;
 import '../../services/running_coach_service.dart';
 import 'package:nudge/screens/health/running_coach_screen.dart';
-import 'package:nudge/screens/activity/activity_summary_screen.dart';
+import 'package:nudge/screens/activity/activity_tracker_screen.dart';
 
 const _pink = Color(0xFFFF2D95);
 
@@ -425,7 +425,7 @@ class _RunningCoachListScreenState extends State<RunningCoachListScreen> {
             icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
             onPressed: () => Navigator.pop(context),
           ),
-          title: Text('Activity Coach',
+          title: Text('Cardio Coach',
               style: GoogleFonts.outfit(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white)),
           actions: [
             IconButton(
@@ -451,7 +451,7 @@ class _RunningCoachListScreenState extends State<RunningCoachListScreen> {
         floatingActionButton: FloatingActionButton.extended(
           backgroundColor: NudgeTokens.purple,
           onPressed: () => Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const ActivitySummaryScreen()))
+              .push(MaterialPageRoute(builder: (_) => const ActivityTrackerScreen()))
               .then((_) => _load()),
           icon: const Icon(Icons.play_arrow_rounded, color: Colors.white),
           label: Text('Start GPS Tracker',

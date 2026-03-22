@@ -20,6 +20,7 @@ class ExerciseDB {
       'Straight-Arm Pulldown', 'Pull Ups', 'Chin Ups', 'Neutral Grip Pull Ups',
       'T-Bar Row', 'Back Extension', 'Shrugs', 'Dumbbell Shrugs',
       'Cable Pullover', 'Dumbbell Pullover', 'Renegade Row',
+      'Diverging Seated Row', 'Assisted Chin-Up',
     ],
     'Legs': [
       'Squat', 'Front Squat', 'Box Squat', 'Hack Squat', 'Smith Machine Squat',
@@ -51,7 +52,7 @@ class ExerciseDB {
       'Tricep Extension', 'Tricep Extension (Cable)', 'Tricep Extension (Dumbbell)',
       'Skull Crushers', 'Overhead Tricep Extension', 'Overhead Cable Extension',
       'Close Grip Bench Press', 'Tricep Extension Machine', 'Dip Machine',
-      'Tricep Dips', 'Bench Dips', 'JM Press', 'Tate Press', 'Kickbacks',
+      'Tricep Dips', 'Bench Dips', 'Seated Dips', 'JM Press', 'Tate Press', 'Kickbacks',
       'Wrist Roller', 'Wrist Curls', 'Reverse Wrist Curls',
     ],
     'Core': [

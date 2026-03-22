@@ -41,19 +41,19 @@ class _StepsDetailScreenState extends State<StepsDetailScreen>
     final activity = await HealthService.fetchDailyActivityBySource();
     if (mounted) {
       setState(() {
-        _points = pts
-            .where((p) =>
-                p.type == HealthDataType.STEPS ||
-                p.type == HealthDataType.ACTIVE_ENERGY_BURNED ||
-                p.type == HealthDataType.BASAL_ENERGY_BURNED ||
-                p.type == HealthDataType.TOTAL_CALORIES_BURNED)
-            .toList();
+        _points = pts;
         _localSteps = localLogs;
         _aggregation = activity;
         _countedKeys = (activity['countedPointKeys'] as Set<String>?) ?? {};
         _loading = false;
       });
     }
+  }
+
+  Future<void> _togglePinnedSource(String sourceKey) async {
+    final current = HealthService.getPinnedSource();
+    await HealthService.setPinnedSource(current == sourceKey ? null : sourceKey);
+    _fetch();
   }
 
   String _mapSource(String source) {
@@ -145,6 +145,88 @@ class _StepsDetailScreenState extends State<StepsDetailScreen>
             },
           ),
           IconButton(
+            icon: const Icon(Icons.summarize_outlined, color: NudgeTokens.green),
+            tooltip: 'Brief Diagnostic (Selectable)',
+            onPressed: () {
+              final logs = (_aggregation['traceLogs'] as List<dynamic>?)?.cast<String>() ?? [];
+              if (logs.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('No trace logs found. Try refreshing.')),
+                );
+                return;
+              }
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: NudgeTokens.elevated,
+                  title: const Text('Brief Diagnostic', style: TextStyle(color: Colors.white)),
+                  content: SizedBox(
+                    width: double.maxFinite,
+                    child: SingleChildScrollView(
+                      child: SelectableText(
+                        logs.join('\n'),
+                        style: const TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'monospace'),
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Close', style: TextStyle(color: NudgeTokens.green)),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.bug_report_outlined, color: NudgeTokens.amber),
+            tooltip: 'Deep Diagnostic (Console)',
+            onPressed: () async {
+              final start = HealthService.dayBoundaryStart();
+              final end = DateTime.now();
+              final dump = await HealthService.fetchDeepDump(start: start, end: end);
+              for (var s in dump) {
+                debugPrint(s);
+              }
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Deep diagnostic dump printed to console.'), backgroundColor: NudgeTokens.amber),
+                );
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.analytics_outlined, color: NudgeTokens.blue),
+            tooltip: 'Export for Python Analysis',
+            onPressed: () async {
+              final path = await HealthService.saveHealthDump();
+              if (mounted) {
+                if (path.startsWith('Error')) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(path), backgroundColor: NudgeTokens.red),
+                  );
+                } else {
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: NudgeTokens.elevated,
+                      title: const Text('Export Complete', style: TextStyle(color: Colors.white)),
+                      content: Text('File saved to:\n$path\n\nRun the Python script on your PC to analyze.',
+                          style: const TextStyle(color: NudgeTokens.textLow)),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('OK', style: TextStyle(color: NudgeTokens.green)),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              }
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _fetch,
           ),
@@ -176,7 +258,8 @@ class _StepsDetailScreenState extends State<StepsDetailScreen>
                 _SummaryTab(
                     aggregation: _aggregation,
                     localSteps: _localSteps,
-                    mapSource: _mapSource),
+                    mapSource: _mapSource,
+                    onSourceSelect: _togglePinnedSource),
                 _HourlyTab(points: _points, mapSource: _mapSource),
                 _RawTab(points: _points, mapSource: _mapSource, countedKeys: _countedKeys),
               ],
@@ -191,22 +274,24 @@ class _SummaryTab extends StatelessWidget {
   final Map<String, dynamic> aggregation;
   final Map<String, double> localSteps;
   final String Function(String) mapSource;
+  final void Function(String sourceKey) onSourceSelect;
 
   const _SummaryTab(
       {required this.aggregation,
       required this.localSteps,
-      required this.mapSource});
+      required this.mapSource,
+      required this.onSourceSelect});
 
   @override
   Widget build(BuildContext context) {
     final grouped = (aggregation['grouped'] as Map<String, dynamic>?) ?? {};
     final totals = aggregation['totals'] as Map? ?? {};
     final bestSource = aggregation['bestSource'] as String? ?? 'Unknown';
+    final pinnedSource = HealthService.getPinnedSource();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
       children: [
-        // How steps are counted explanation
         _SectionHeader('HOW TRACKING WORKS'),
         const SizedBox(height: 8),
         _InfoCard(
@@ -216,22 +301,19 @@ class _SummaryTab extends StatelessWidget {
               _InfoRow(
                 icon: Icons.looks_one_rounded,
                 color: NudgeTokens.green,
-                text:
-                    'Health Connect collects step data from all connected apps (Google Fit, Samsung Health, wearables, etc.)',
+                text: 'Health Connect collects step data from all connected apps (Google Fit, Samsung Health, wearables, etc.)',
               ),
               const SizedBox(height: 10),
               _InfoRow(
                 icon: Icons.looks_two_rounded,
                 color: NudgeTokens.green,
-                text:
-                    'Each source reports independently — Nudge picks the source with the highest step count to avoid double-counting.',
+                text: 'The primary source is counted in full. Lower-priority sources fill only uncovered time gaps.',
               ),
               const SizedBox(height: 10),
               _InfoRow(
                 icon: Icons.looks_3_rounded,
                 color: NudgeTokens.green,
-                text:
-                    'Calories are estimated from the winning source. Manual entries are added on top.',
+                text: 'Tap any source below to pin it as your primary source. Tap again to unpin.',
               ),
             ],
           ),
@@ -248,18 +330,31 @@ class _SummaryTab extends StatelessWidget {
                 children: [
                   const Text('Selected source',
                       style: TextStyle(color: NudgeTokens.textMid)),
-                  Text(mapSource(bestSource),
-                      style: const TextStyle(
-                          color: NudgeTokens.green,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15)),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (pinnedSource != null) ...[
+                        const Icon(Icons.push_pin_rounded,
+                            size: 12, color: NudgeTokens.amber),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(mapSource(bestSource),
+                          style: TextStyle(
+                              color: pinnedSource != null
+                                  ? NudgeTokens.amber
+                                  : NudgeTokens.green,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15)),
+                    ],
+                  ),
                 ],
               ),
               const Divider(color: NudgeTokens.border, height: 20),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Steps', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  const Text('Steps',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   Text(
                     '${((totals['steps'] as double?) ?? 0.0).toInt()}',
                     style: const TextStyle(
@@ -273,7 +368,8 @@ class _SummaryTab extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Calories', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  const Text('Calories',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   Text(
                     '${((totals['calories'] as double?) ?? 0.0).toInt()} kcal',
                     style: const TextStyle(
@@ -306,7 +402,7 @@ class _SummaryTab extends StatelessWidget {
           ),
         ],
 
-        // Samsung Health sync hint — shown when no Samsung steps are present
+        // Samsung Health sync hint
         Builder(builder: (context) {
           final hasSamsungSteps = grouped.entries.any((e) {
             final lower = e.key.toLowerCase();
@@ -330,8 +426,7 @@ class _SummaryTab extends StatelessWidget {
                   Expanded(
                     child: Text(
                       'Samsung Health shows 0 steps. To fix: open Samsung Health → Profile → Connected Services → Health Connect → turn on Steps sync.',
-                      style: TextStyle(
-                          color: NudgeTokens.textMid, fontSize: 12, height: 1.4),
+                      style: TextStyle(color: NudgeTokens.textMid, fontSize: 12, height: 1.4),
                     ),
                   ),
                 ],
@@ -341,7 +436,24 @@ class _SummaryTab extends StatelessWidget {
         }),
 
         const SizedBox(height: 24),
-        _SectionHeader('ALL SOURCES COMPARED'),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _SectionHeader('ALL SOURCES COMPARED'),
+            if (pinnedSource != null)
+              GestureDetector(
+                onTap: () => onSourceSelect(pinnedSource),
+                child: const Text('Clear pin',
+                    style: TextStyle(
+                        color: NudgeTokens.amber,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text('Tap a source to pin it as primary',
+            style: TextStyle(color: NudgeTokens.textLow, fontSize: 11)),
         const SizedBox(height: 8),
         if (grouped.isEmpty)
           const Text('No source data available.',
@@ -354,58 +466,90 @@ class _SummaryTab extends StatelessWidget {
             final act = (d['active_cal'] ?? 0.0).toInt();
             final bsl = (d['basal_cal'] ?? 0.0).toInt();
             final isWinner = e.key == bestSource;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _InfoCard(
-                accent: isWinner ? NudgeTokens.green : null,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Row(children: [
-                            if (isWinner)
-                              const Padding(
-                                padding: EdgeInsets.only(right: 6),
-                                child: Icon(Icons.check_circle_rounded,
-                                    color: NudgeTokens.green, size: 16),
-                              ),
-                            Expanded(
-                              child: Text(
-                                mapSource(e.key),
-                                style: TextStyle(
-                                    color: isWinner
-                                        ? NudgeTokens.green
-                                        : Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14),
-                                overflow: TextOverflow.ellipsis,
-                              ),
+            final isPinned = e.key == pinnedSource;
+            final isAggregated = e.key == 'Aggregated';
+
+            final card = _InfoCard(
+              accent: isPinned
+                  ? NudgeTokens.amber
+                  : isWinner
+                      ? NudgeTokens.green
+                      : null,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Row(children: [
+                          if (isPinned)
+                            const Padding(
+                              padding: EdgeInsets.only(right: 6),
+                              child: Icon(Icons.push_pin_rounded,
+                                  color: NudgeTokens.amber, size: 14),
+                            )
+                          else if (isWinner)
+                            const Padding(
+                              padding: EdgeInsets.only(right: 6),
+                              child: Icon(Icons.check_circle_rounded,
+                                  color: NudgeTokens.green, size: 16),
                             ),
-                          ]),
-                        ),
-                        Text(
-                          '$stp steps · $cal kcal',
-                          style: const TextStyle(
-                              color: NudgeTokens.textMid,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                    if (act > 0 || bsl > 0) ...[
-                      const SizedBox(height: 6),
+                          Expanded(
+                            child: Text(
+                              mapSource(e.key),
+                              style: TextStyle(
+                                  color: isPinned
+                                      ? NudgeTokens.amber
+                                      : isWinner
+                                          ? NudgeTokens.green
+                                          : Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ]),
+                      ),
                       Text(
-                        'Active $act kcal  ·  Basal $bsl kcal',
+                        '$stp steps · $cal kcal',
                         style: const TextStyle(
-                            color: NudgeTokens.textLow, fontSize: 11),
+                            color: NudgeTokens.textMid,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600),
                       ),
                     ],
+                  ),
+                  if (act > 0 || bsl > 0) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Active $act kcal  ·  Basal $bsl kcal',
+                      style: const TextStyle(color: NudgeTokens.textLow, fontSize: 11),
+                    ),
                   ],
-                ),
+                  if (!isAggregated) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      isPinned ? 'Pinned — tap to unpin' : 'Tap to use as primary',
+                      style: TextStyle(
+                          color: isPinned
+                              ? NudgeTokens.amber.withValues(alpha: 0.7)
+                              : NudgeTokens.textLow,
+                          fontSize: 10),
+                    ),
+                  ],
+                ],
               ),
+            );
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: isAggregated
+                  ? card
+                  : GestureDetector(
+                      onTap: () => onSourceSelect(e.key),
+                      child: card,
+                    ),
             );
           }),
       ],
@@ -545,7 +689,13 @@ class _RawTab extends StatelessWidget {
       if (t == HealthDataType.STEPS) return NudgeTokens.green;
       if (t == HealthDataType.ACTIVE_ENERGY_BURNED) return NudgeTokens.amber;
       if (t == HealthDataType.BASAL_ENERGY_BURNED) return NudgeTokens.textLow;
-      return NudgeTokens.blue;
+      if (t == HealthDataType.TOTAL_CALORIES_BURNED) return NudgeTokens.amber;
+      if (t == HealthDataType.HEART_RATE) return NudgeTokens.red;
+      if (t == HealthDataType.RESTING_HEART_RATE) return NudgeTokens.red;
+      if (t == HealthDataType.DISTANCE_DELTA) return NudgeTokens.blue;
+      if (t == HealthDataType.SLEEP_SESSION) return NudgeTokens.purple;
+      if (t == HealthDataType.WATER) return NudgeTokens.blue;
+      return NudgeTokens.purple;
     }
 
     String _typeLabel(HealthDataType t) {
@@ -553,7 +703,39 @@ class _RawTab extends StatelessWidget {
       if (t == HealthDataType.ACTIVE_ENERGY_BURNED) return 'ACTIVE CAL';
       if (t == HealthDataType.BASAL_ENERGY_BURNED) return 'BASAL CAL';
       if (t == HealthDataType.TOTAL_CALORIES_BURNED) return 'TOTAL CAL';
-      return t.name;
+      if (t == HealthDataType.HEART_RATE) return 'HR';
+      if (t == HealthDataType.RESTING_HEART_RATE) return 'RESTING HR';
+      if (t == HealthDataType.DISTANCE_DELTA) return 'DISTANCE';
+      if (t == HealthDataType.SLEEP_SESSION) return 'SLEEP';
+      if (t == HealthDataType.WATER) return 'WATER';
+      // Fallback: convert SNAKE_CASE to Title Case words
+      return t.name.replaceAll('_', ' ');
+    }
+
+    String _typeValue(HealthDataPoint p, double val) {
+      final t = p.type;
+      final v = p.value;
+      if (t == HealthDataType.STEPS) return '${val.toInt()} steps';
+      if (t == HealthDataType.WORKOUT && v is WorkoutHealthValue) {
+         final steps = v.totalSteps ?? 0;
+         final cals = v.totalEnergyBurned ?? 0;
+         if (steps > 0) return '$steps steps';
+         if (cals > 0) return '$cals kcal';
+         return 'Workout';
+      }
+      if (t == HealthDataType.HEART_RATE || t == HealthDataType.RESTING_HEART_RATE) {
+        return '${val.toInt()} bpm';
+      }
+      if (t == HealthDataType.DISTANCE_DELTA) {
+        return val >= 1000 ? '${(val / 1000).toStringAsFixed(2)} km' : '${val.toInt()} m';
+      }
+      if (t == HealthDataType.WATER) return '${val.toInt()} ml';
+      if (t == HealthDataType.SLEEP_SESSION) {
+        final mins = p.dateTo.difference(p.dateFrom).inMinutes;
+        return '${(mins / 60).toStringAsFixed(1)} h';
+      }
+      if (p.unit == HealthDataUnit.KILOCALORIE) return '${val.toInt()} kcal';
+      return val.toStringAsFixed(1);
     }
 
     return ListView.builder(
@@ -567,9 +749,14 @@ class _RawTab extends StatelessWidget {
           );
         }
         final p = sorted[i - 1];
-        final val = p.value is NumericHealthValue
-            ? (p.value as NumericHealthValue).numericValue.toDouble()
-            : 0.0;
+        final v = p.value;
+        double val = 0.0;
+        if (v is NumericHealthValue) {
+          val = v.numericValue.toDouble();
+        } else if (v is WorkoutHealthValue) {
+          val = (v.totalSteps ?? 0).toDouble();
+          if (val == 0) val = (v.totalEnergyBurned ?? 0).toDouble();
+        }
         final color = _typeColor(p.type);
         final typeLabel = _typeLabel(p.type);
         final src = mapSource(p.sourceName);
@@ -662,9 +849,7 @@ class _RawTab extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  p.type == HealthDataType.STEPS
-                      ? '${val.toInt()} steps'
-                      : '${val.toInt()} kcal',
+                  _typeValue(p, val),
                   style: TextStyle(
                       color: color,
                       fontWeight: FontWeight.w800,

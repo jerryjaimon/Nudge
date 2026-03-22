@@ -8,6 +8,7 @@ import '../../utils/health_service.dart';
 import '../../utils/nudge_theme_extension.dart';
 import 'sleep_screen.dart';
 import 'goals_screen.dart';
+import 'body_composition_screen.dart';
 import '../activity/steps_detail_screen.dart';
 import '../gym/gym_screen.dart';
 
@@ -306,6 +307,15 @@ class _HealthCenterScreenState extends State<HealthCenterScreen> {
                   _RecoveryCard(recovery: _recovery),
                   const SizedBox(height: 12),
                   _SettingTile(
+                    icon: Icons.monitor_weight_rounded,
+                    title: 'Body Composition',
+                    subtitle: 'Body fat, muscle mass, water & more',
+                    onTap: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const BodyCompositionScreen()));
+                    },
+                    trailing: const Icon(Icons.chevron_right_rounded, color: NudgeTokens.textLow),
+                  ),
+                  _SettingTile(
                     icon: Icons.nights_stay_rounded,
                     title: 'Sleep Cycle',
                     subtitle: 'View inferred sleep data',
@@ -521,7 +531,7 @@ class _ProfileStrip extends StatelessWidget {
   }
 }
 
-// ─── Calorie ring card ────────────────────────────────────────────────────────
+// ─── Calorie summary card ─────────────────────────────────────────────────────
 
 class _CalorieRingCard extends StatelessWidget {
   final double eaten;
@@ -538,66 +548,128 @@ class _CalorieRingCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final progress = target > 0 ? (eaten / target).clamp(0.0, 1.0) : 0.0;
     final isOver = eaten > target;
-    final ringColor = isOver ? NudgeTokens.red : NudgeTokens.gymB;
-    final remaining = (target - eaten).round();
+    final remaining = (target - eaten).abs().round();
+    final deficit = burned > 0 ? (burned - eaten).round() : null;
+    final isDeficit = deficit != null && deficit >= 0;
 
     return Container(
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: NudgeTokens.card,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: NudgeTokens.border),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Ring
-          SizedBox(
-            width: 110,
-            height: 110,
-            child: Stack(
-              alignment: Alignment.center,
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+            child: Row(
               children: [
-                CustomPaint(
-                  size: const Size(110, 110),
-                  painter: _RingPainter(progress: progress, color: ringColor),
+                const Text('CALORIES',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: NudgeTokens.textLow, letterSpacing: 1.4)),
+                const Spacer(),
+                Text('goal: $target kcal',
+                    style: const TextStyle(fontSize: 11, color: NudgeTokens.textLow)),
+              ],
+            ),
+          ),
+          // Big eaten number
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  '${eaten.toInt()}',
+                  style: TextStyle(
+                    fontSize: 44,
+                    fontWeight: FontWeight.w900,
+                    color: isOver ? NudgeTokens.red : NudgeTokens.textHigh,
+                    height: 1,
+                  ),
                 ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      eaten.toInt().toString(),
-                      style: TextStyle(
-                          color: (Theme.of(context).extension<NudgeThemeExtension>()?.textColor ?? NudgeTokens.textHigh),
-                          fontWeight: FontWeight.w900,
-                          fontSize: 24,
-                          height: 1),
-                    ),
-                    const Text('kcal',
-                        style: TextStyle(
-                            color: NudgeTokens.textLow, fontSize: 11)),
-                  ],
+                const SizedBox(width: 8),
+                const Text('kcal eaten',
+                    style: TextStyle(color: NudgeTokens.textLow, fontSize: 13)),
+              ],
+            ),
+          ),
+          // Progress bar + label
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 8,
+                    backgroundColor: NudgeTokens.elevated,
+                    valueColor: AlwaysStoppedAnimation(
+                        isOver ? NudgeTokens.red : NudgeTokens.gymB),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${(progress * 100).toInt()}%  ·  $remaining kcal ${isOver ? 'over' : 'remaining'}',
+                  style: const TextStyle(fontSize: 11, color: NudgeTokens.textLow),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 20),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          // Stat tiles
+          Divider(height: 1, color: NudgeTokens.border),
+          IntrinsicHeight(
+            child: Row(
               children: [
-                _calRow('Target', '$target kcal', NudgeTokens.textMid),
-                const SizedBox(height: 10),
-                _calRow(
-                  isOver ? 'Over by' : 'Remaining',
-                  '${remaining.abs()} kcal',
-                  isOver ? NudgeTokens.red : NudgeTokens.gymB,
+                Expanded(
+                  child: _tile(
+                    context,
+                    label: 'BURNED',
+                    value: burned > 0 ? '${burned.toInt()}' : '—',
+                    unit: burned > 0 ? 'kcal' : '',
+                    color: NudgeTokens.healthB,
+                    onTap: burned > 0 ? () => _showBurnInfo(context) : null,
+                    labelSuffix: burned > 0
+                        ? const Icon(Icons.info_outline_rounded, size: 10, color: NudgeTokens.textLow)
+                        : null,
+                  ),
                 ),
-                const SizedBox(height: 10),
-                _calRow('Burned', '${burned.toInt()} kcal', NudgeTokens.healthB),
-                if (burned > 0) ...[
-                  const SizedBox(height: 10),
-                  _calRow('Net', '${(eaten - burned).toInt()} kcal', NudgeTokens.textMid),
-                ],
+                VerticalDivider(width: 1, color: NudgeTokens.border),
+                Expanded(
+                  child: _tile(
+                    context,
+                    label: isOver ? 'OVER GOAL' : 'REMAINING',
+                    value: '$remaining',
+                    unit: 'kcal',
+                    color: isOver ? NudgeTokens.red : NudgeTokens.gymB,
+                  ),
+                ),
+                VerticalDivider(width: 1, color: NudgeTokens.border),
+                Expanded(
+                  child: _tile(
+                    context,
+                    label: deficit == null
+                        ? 'DEFICIT'
+                        : isDeficit ? 'DEFICIT' : 'SURPLUS',
+                    value: deficit == null ? '—' : '${deficit.abs()}',
+                    unit: deficit != null ? 'kcal' : '',
+                    color: deficit == null
+                        ? NudgeTokens.textLow
+                        : isDeficit ? NudgeTokens.green : NudgeTokens.amber,
+                    valuePrefix: deficit != null
+                        ? Text(isDeficit ? '↓' : '↑',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: isDeficit ? NudgeTokens.green : NudgeTokens.amber,
+                            ))
+                        : null,
+                  ),
+                ),
               ],
             ),
           ),
@@ -606,15 +678,78 @@ class _CalorieRingCard extends StatelessWidget {
     );
   }
 
-  Widget _calRow(String label, String value, Color color) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label,
-            style: const TextStyle(color: NudgeTokens.textLow, fontSize: 12)),
-        Text(value,
-            style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w700)),
-      ],
+  Widget _tile(
+    BuildContext context, {
+    required String label,
+    required String value,
+    required String unit,
+    required Color color,
+    VoidCallback? onTap,
+    Widget? labelSuffix,
+    Widget? valuePrefix,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        color: NudgeTokens.textLow,
+                        letterSpacing: 1.1)),
+                if (labelSuffix != null) ...[const SizedBox(width: 3), labelSuffix],
+              ],
+            ),
+            const SizedBox(height: 5),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                if (valuePrefix != null) ...[valuePrefix, const SizedBox(width: 3)],
+                Text(value,
+                    style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: color,
+                        height: 1)),
+              ],
+            ),
+            if (unit.isNotEmpty)
+              Text(unit,
+                  style: const TextStyle(fontSize: 10, color: NudgeTokens.textLow)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBurnInfo(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: NudgeTokens.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Why does this differ from my watch?',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: NudgeTokens.textHigh)),
+        content: const Text(
+          'Health Connect aggregates all connected sources (Samsung Health, Google Fit, etc.) '
+          'and includes your resting metabolic rate (BMR).\n\n'
+          '• Watch "active" = exercise calories only\n'
+          '• Watch "total" = active + resting metabolism\n'
+          '• Phone = best source including BMR\n\n'
+          'For accurate deficit tracking, use your watch\'s "total calories" figure.',
+          style: TextStyle(color: NudgeTokens.textMid, fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Got it')),
+        ],
+      ),
     );
   }
 }
@@ -733,47 +868,6 @@ class _ActivityGoalsCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _RingPainter extends CustomPainter {
-  final double progress;
-  final Color color;
-  const _RingPainter({required this.progress, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    final r = (size.width / 2) - 8;
-    final rect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
-
-    // Track
-    canvas.drawArc(rect, -math.pi / 2, 2 * math.pi,
-        false,
-        Paint()
-          ..color = NudgeTokens.elevated
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 10
-          ..strokeCap = StrokeCap.round);
-
-    // Progress
-    if (progress > 0) {
-      canvas.drawArc(
-          rect,
-          -math.pi / 2,
-          2 * math.pi * progress,
-          false,
-          Paint()
-            ..color = color
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 10
-            ..strokeCap = StrokeCap.round);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RingPainter old) =>
-      old.progress != progress || old.color != color;
 }
 
 class _SettingTile extends StatelessWidget {
@@ -1877,10 +1971,13 @@ class _RecoveryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final score = recovery['recoveryScore'] as int?;
-    final rhr   = (recovery['restingHrBpm'] as num?)?.toDouble();
-    final hrv   = (recovery['hrvMs'] as num?)?.toDouble();
-    final avg7  = (recovery['avgHrv7d'] as num?)?.toDouble();
+    final score  = recovery['recoveryScore'] as int?;
+    final rhr    = (recovery['restingHrBpm'] as num?)?.toDouble();
+    final hrv    = (recovery['hrvMs'] as num?)?.toDouble();
+    final avg7   = (recovery['avgHrv7d'] as num?)?.toDouble();
+    final avgHr  = (recovery['avgHrBpm'] as num?)?.toDouble();
+    final maxHr  = (recovery['maxHrBpm'] as num?)?.toDouble();
+    final hrPts  = (recovery['hrPointCount'] as int?) ?? 0;
 
     Color scoreColor;
     String scoreLabel;
@@ -1956,7 +2053,31 @@ class _RecoveryCard extends StatelessWidget {
               ),
             ],
           ),
-          if (score == null) ...[
+          if (avgHr != null || maxHr != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _RecovMetric(
+                  label: 'Avg HR',
+                  value: avgHr != null ? '${avgHr.round()} bpm' : '--',
+                  icon: Icons.favorite_rounded,
+                  color: NudgeTokens.red,
+                  sub: hrPts > 0 ? '$hrPts readings' : null,
+                ),
+                const SizedBox(width: 10),
+                _RecovMetric(
+                  label: 'Max HR',
+                  value: maxHr != null ? '${maxHr.round()} bpm' : '--',
+                  icon: Icons.trending_up_rounded,
+                  color: NudgeTokens.amber,
+                  sub: maxHr != null
+                      ? (maxHr > 160 ? 'High intensity' : maxHr > 130 ? 'Moderate' : 'Low intensity')
+                      : null,
+                ),
+              ],
+            ),
+          ],
+          if (score == null && avgHr == null) ...[
             const SizedBox(height: 10),
             const Text(
               'Connect a wearable via Health Connect to see recovery data.',

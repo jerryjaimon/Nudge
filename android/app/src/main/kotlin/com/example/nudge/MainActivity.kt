@@ -23,6 +23,7 @@ import java.util.Locale
 class MainActivity: FlutterFragmentActivity() {
     private val FINANCE_CHANNEL = "com.example.nudge/finance"
     private val POMODORO_CHANNEL = "com.example.nudge/pomodoro"
+    private val UPDATE_CHANNEL  = "com.example.nudge/update"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -138,6 +139,36 @@ class MainActivity: FlutterFragmentActivity() {
                         0L
                     }
                     result.success(nextAlarm)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATE_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "installApk" -> {
+                    val path = call.argument<String>("path")
+                    if (path == null) {
+                        result.error("INVALID_ARG", "path is null", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val apkFile = java.io.File(path)
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            this,
+                            "${packageName}.fileprovider",
+                            apkFile
+                        )
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/vnd.android.package-archive")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("INSTALL_FAILED", e.message, null)
+                    }
                 }
                 else -> result.notImplemented()
             }

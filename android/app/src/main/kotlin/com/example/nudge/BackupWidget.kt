@@ -9,7 +9,7 @@ import android.widget.RemoteViews
 
 class BackupWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        val sp = context.getSharedPreferences("HomeWidgetPlugin", Context.MODE_PRIVATE)
+        val sp = context.getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
         val lastLabel  = sp.getString("backup_last",   "Never")          ?: "Never"
         val statusLabel = sp.getString("backup_status", "Not backed up") ?: "Not backed up"
         val autoLabel   = sp.getString("backup_auto",  "OFF")            ?: "OFF"

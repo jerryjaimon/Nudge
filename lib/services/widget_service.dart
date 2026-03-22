@@ -16,6 +16,7 @@ class WidgetService {
       _updatePomodoro(),
       _updateFood(),
       _updateBackup(),
+      _updateDayTracker(),
     ]);
   }
 
@@ -204,6 +205,52 @@ class WidgetService {
       await HomeWidget.saveWidgetData<String>('backup_status', statusLabel);
       await HomeWidget.saveWidgetData<String>('backup_auto', autoEnabled ? 'ON' : 'OFF');
       await HomeWidget.updateWidget(androidName: 'BackupWidget');
+    } catch (_) {}
+  }
+
+  // ── Day Tracker ──────────────────────────────────────────────────────────────
+
+  static Future<void> _updateDayTracker() async {
+    try {
+      final box = await AppStorage.getSettingsBox();
+      final raw = box.get('day_trackers', defaultValue: <dynamic>[]) as List;
+      if (raw.isEmpty) return;
+
+      final first = (raw.first as Map).cast<String, dynamic>();
+      final title = (first['title'] as String?) ?? 'Tracker';
+      final isDateBased = (first['isDateBased'] as bool?) ?? false;
+      final colorVal = (first['color'] as int?) ?? 0xFF7C4DFF;
+
+      int current, total;
+      if (isDateBased) {
+        final startStr = first['startDate'] as String?;
+        final endStr = first['endDate'] as String?;
+        final start = startStr != null ? DateTime.tryParse(startStr) : null;
+        final end = endStr != null ? DateTime.tryParse(endStr) : null;
+        if (start != null && end != null) {
+          final today = DateTime.now();
+          final todayDay = DateTime(today.year, today.month, today.day);
+          final startDay = DateTime(start.year, start.month, start.day);
+          final endDay = DateTime(end.year, end.month, end.day);
+          total = endDay.difference(startDay).inDays;
+          current = todayDay.difference(startDay).inDays.clamp(0, total);
+        } else {
+          current = 0;
+          total = 365;
+        }
+      } else {
+        current = (first['currentDay'] as int?) ?? 0;
+        total = (first['totalDays'] as int?) ?? 100;
+      }
+
+      final pctInt = total > 0 ? ((current / total) * 100).round().clamp(0, 100) : 0;
+
+      await HomeWidget.saveWidgetData<String>('tracker_title', title);
+      await HomeWidget.saveWidgetData<int>('tracker_current', current);
+      await HomeWidget.saveWidgetData<int>('tracker_total', total);
+      await HomeWidget.saveWidgetData<int>('tracker_color', colorVal);
+      await HomeWidget.saveWidgetData<int>('tracker_pct_int', pctInt);
+      await HomeWidget.updateWidget(androidName: 'DayTrackerWidget');
     } catch (_) {}
   }
 

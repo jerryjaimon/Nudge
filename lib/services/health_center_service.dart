@@ -138,7 +138,7 @@ class HealthCenterService {
   }
 
   /// Count of gym workout sessions in the current ISO week (Mon–Sun).
-  /// Running/walking/HC sessions are NOT counted here — those belong to Activity Coach.
+  /// Running/walking/HC sessions are NOT counted here — those belong to Cardio Coach.
   static Future<int> getWeeklyWorkoutCount() async {
     final now = DateTime.now();
     // ISO week starts Monday
@@ -162,7 +162,7 @@ class HealthCenterService {
   }
 
   /// Returns gym workout sessions for the current ISO week (Mon–Sun).
-  /// Running/walking/HC sessions are excluded — those belong to Activity Coach.
+  /// Running/walking/HC sessions are excluded — those belong to Cardio Coach.
   static Future<List<Map<String, dynamic>>> getWeeklyWorkoutDetails() async {
     final now = DateTime.now();
     final weekStart = now.subtract(Duration(days: now.weekday - 1));
@@ -353,7 +353,7 @@ class HealthCenterService {
 
   // ── Aggregated today stats ────────────────────────────────────────────────
 
-  /// Returns stats for [date]. Today → live fetch; past → cached history.
+  /// Returns stats for [date]. Today → live fetch; past → live HC fetch (with cache fallback).
   static Future<Map<String, dynamic>> getStatsForDate(DateTime date) async {
     final now = DateTime.now();
     final isToday = date.year == now.year &&
@@ -379,14 +379,34 @@ class HealthCenterService {
     final waterMl = ((waterData['total'] ?? 0) as num).toDouble();
 
     final macroGoals = FoodService.getMacroGoals();
-    final steps = (entry['steps'] as num?)?.toDouble() ?? 0.0;
-    final caloriesBurned = (entry['calories'] as num?)?.toDouble() ?? 0.0;
-    final walkingDistKm =
-        (entry['walkingDistKm'] as num?)?.toDouble() ?? 0.0;
-    final runningDistKm =
-        (entry['runningDistKm'] as num?)?.toDouble() ?? 0.0;
-    final runningCal = (entry['runningCal'] as num?)?.toDouble() ?? 0.0;
-    final workoutCal = (entry['workoutCal'] as num?)?.toDouble() ?? 0.0;
+
+    // Always fetch live from Health Connect for past dates so retroactively
+    // synced Samsung Health / watch data shows the current correct count.
+    double steps = (entry['steps'] as num?)?.toDouble() ?? 0.0;
+    double caloriesBurned = (entry['calories'] as num?)?.toDouble() ?? 0.0;
+    double walkingDistKm = (entry['walkingDistKm'] as num?)?.toDouble() ?? 0.0;
+    double runningDistKm = (entry['runningDistKm'] as num?)?.toDouble() ?? 0.0;
+    double runningCal = (entry['runningCal'] as num?)?.toDouble() ?? 0.0;
+    double workoutCal = (entry['workoutCal'] as num?)?.toDouble() ?? 0.0;
+
+    if (await HealthService.isEnabled()) {
+      try {
+        final dayStart = DateTime(date.year, date.month, date.day);
+        final dayEnd = dayStart.add(const Duration(days: 1));
+        // Use 1 min buffer to catch points exactly on the boundary
+        final queryStart = dayStart.subtract(const Duration(minutes: 1));
+        final h = await HealthService.fetchDailyActivityBySource(start: queryStart, end: dayEnd);
+        final totals = (h['totals'] as Map?)?.cast<String, double>() ?? {};
+        if ((totals['steps'] ?? 0) > 0) steps = totals['steps']!;
+        if ((totals['calories'] ?? 0) > 0) caloriesBurned = totals['calories']!;
+        if ((totals['walkingDist'] ?? 0) > 0) walkingDistKm = totals['walkingDist']! / 1000;
+        if ((totals['runningDist'] ?? 0) > 0) runningDistKm = totals['runningDist']! / 1000;
+        if ((totals['runningCal'] ?? 0) > 0) runningCal = totals['runningCal']!;
+        if ((totals['workoutCal'] ?? 0) > 0) workoutCal = totals['workoutCal']!;
+      } catch (_) {
+        // keep cache values on error
+      }
+    }
 
     return {
       'caloriesIn': dayCalories,
@@ -739,20 +759,34 @@ class HealthCenterService {
   static Future<Map<String, dynamic>> getRecoveryStats({int days = 7}) async {
     final now = DateTime.now();
     final start = now.subtract(Duration(days: days));
+    final todayStart = DateTime(now.year, now.month, now.day);
     final List<double> rhrList = [];
     final List<double> hrvList = [];
+    final List<double> hrTodayList = [];
 
     try {
       final health = Health();
       final granted = await health.requestAuthorization(
-        [HealthDataType.RESTING_HEART_RATE, HealthDataType.HEART_RATE_VARIABILITY_RMSSD],
-        permissions: [HealthDataAccess.READ, HealthDataAccess.READ],
+        [
+          HealthDataType.RESTING_HEART_RATE,
+          HealthDataType.HEART_RATE_VARIABILITY_RMSSD,
+          HealthDataType.HEART_RATE,
+        ],
+        permissions: [
+          HealthDataAccess.READ,
+          HealthDataAccess.READ,
+          HealthDataAccess.READ,
+        ],
       );
       if (granted) {
         final data = await health.getHealthDataFromTypes(
           startTime: start,
           endTime: now,
-          types: [HealthDataType.RESTING_HEART_RATE, HealthDataType.HEART_RATE_VARIABILITY_RMSSD],
+          types: [
+            HealthDataType.RESTING_HEART_RATE,
+            HealthDataType.HEART_RATE_VARIABILITY_RMSSD,
+            HealthDataType.HEART_RATE,
+          ],
         );
         for (final p in data) {
           if (p.value is! NumericHealthValue) continue;
@@ -761,6 +795,10 @@ class HealthCenterService {
             rhrList.add(v);
           } else if (p.type == HealthDataType.HEART_RATE_VARIABILITY_RMSSD && v > 0) {
             hrvList.add(v);
+          } else if (p.type == HealthDataType.HEART_RATE &&
+              v > 20 && v < 250 &&
+              !p.dateFrom.isBefore(todayStart)) {
+            hrTodayList.add(v);
           }
         }
       }
@@ -772,6 +810,12 @@ class HealthCenterService {
     final latestHrv = hrvList.isNotEmpty ? hrvList.last : null;
     final avgHrv = hrvList.isNotEmpty
         ? hrvList.reduce((a, b) => a + b) / hrvList.length
+        : null;
+    final avgHrToday = hrTodayList.isNotEmpty
+        ? hrTodayList.reduce((a, b) => a + b) / hrTodayList.length
+        : null;
+    final maxHrToday = hrTodayList.isNotEmpty
+        ? hrTodayList.reduce((a, b) => a > b ? a : b)
         : null;
 
     // Recovery score 0-100:
@@ -795,6 +839,9 @@ class HealthCenterService {
       'recoveryScore': score,
       'rhrHistory': rhrList,
       'hrvHistory': hrvList,
+      'avgHrBpm': avgHrToday,
+      'maxHrBpm': maxHrToday,
+      'hrPointCount': hrTodayList.length,
     };
   }
 

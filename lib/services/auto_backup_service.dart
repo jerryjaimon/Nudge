@@ -4,6 +4,7 @@
 // The passphrase is stored in Flutter Secure Storage (Android Keystore —
 // hardware-backed encryption, inaccessible to other apps).
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -22,10 +23,8 @@ const _taskTag      = 'nightlyBackup';
 
 @pragma('vm:entry-point')
 void callbackDispatcher() {
-  // Must be called before executeTask so Flutter plugins are available
-  // in the background isolate that WorkManager spins up.
   WidgetsFlutterBinding.ensureInitialized();
-  Workmanager().executeTask((task, _) async {
+  Workmanager().executeTask((task, inputData) async {
     try {
       await Hive.initFlutter();
       await AppStorage.init();
@@ -35,9 +34,14 @@ void callbackDispatcher() {
       final passphrase = await storage.read(key: _passphraseKey);
       if (passphrase == null || passphrase.isEmpty) return true;
 
-      await FirebaseBackupService.backup(passphrase);
-    } catch (_) {
-      // Silently fail — will retry next night.
+      // UID is passed via inputData — FirebaseAuth.currentUser is unreliable
+      // in a background isolate that cold-initialises Firebase.
+      final uid = inputData?['uid'] as String?;
+      if (uid == null || uid.isEmpty) return true;
+
+      await FirebaseBackupService.backupWithUid(passphrase, uid);
+    } catch (e) {
+      await AppStorage.logAiError('AutoBackup failed: $e');
     }
     return true;
   });
@@ -55,7 +59,7 @@ class AutoBackupService {
   static Future<void> enable(String passphrase) async {
     await _storage.write(key: _passphraseKey, value: passphrase);
     await AppStorage.settingsBox.put('auto_backup_enabled', true);
-    await _schedule();
+    await _schedule(forceReplace: true);
   }
 
   /// Removes the stored passphrase and cancels the scheduled task.
@@ -71,7 +75,12 @@ class AutoBackupService {
 
   // ── Scheduling ──────────────────────────────────────────────────────────────
 
-  static Future<void> _schedule() async {
+  static Future<void> _schedule({bool forceReplace = false}) async {
+    // UID must be passed as inputData so the background isolate can write to
+    // Firestore without relying on FirebaseAuth being available there.
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return; // not signed in — skip scheduling
+
     final now    = DateTime.now();
     var   target = DateTime(now.year, now.month, now.day, 2, 0); // 2 AM
     if (!target.isAfter(now)) target = target.add(const Duration(days: 1));
@@ -82,8 +91,11 @@ class AutoBackupService {
       _taskTag,
       frequency: const Duration(hours: 24),
       initialDelay: delay,
+      inputData: {'uid': uid},
       constraints: Constraints(networkType: NetworkType.connected),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
+      existingWorkPolicy: forceReplace
+          ? ExistingPeriodicWorkPolicy.replace
+          : ExistingPeriodicWorkPolicy.keep,
     );
   }
 

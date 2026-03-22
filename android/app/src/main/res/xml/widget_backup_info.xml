@@ -8,4 +8,6 @@
     android:updatePeriodMillis="1800000"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
-    android:previewLayout="@layout/widget_backup"/>
+    android:previewLayout="@layout/widget_backup"
+    android:label="@string/widget_backup_label"
+    android:description="@string/widget_backup_description"/>

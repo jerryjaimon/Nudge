@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widget labels (shown in widget picker) -->
+    <string name="widget_gym_label">Nudge — Gym</string>
+    <string name="widget_finance_label">Nudge — Finance</string>
+    <string name="widget_habits_label">Nudge — Habits</string>
+    <string name="widget_pomodoro_label">Nudge — Pomodoro</string>
+    <string name="widget_food_label">Nudge — Food</string>
+    <string name="widget_backup_label">Nudge — Backup</string>
+
+    <!-- Widget descriptions (required on Android 12+ to show in picker) -->
+    <string name="widget_gym_description">Shows your gym streak, last workout, and sessions this week.</string>
+    <string name="widget_finance_description">Shows your spending this month vs. your monthly budget.</string>
+    <string name="widget_habits_description">Shows your daily habits completion count and streak.</string>
+    <string name="widget_pomodoro_description">Shows your active Pomodoro project and focus sessions today.</string>
+    <string name="widget_food_description">Shows today\'s calorie intake vs. your daily goal.</string>
+    <string name="widget_backup_description">Shows the last cloud backup date and status.</string>
+    <string name="widget_day_tracker_label">Nudge — Day Tracker</string>
+    <string name="widget_day_tracker_description">Shows a dot-grid progress tracker for any goal or time period.</string>
+</resources>

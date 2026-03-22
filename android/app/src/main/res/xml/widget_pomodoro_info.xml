@@ -8,4 +8,6 @@
     android:updatePeriodMillis="1800000"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
-    android:previewLayout="@layout/widget_pomodoro"/>
+    android:previewLayout="@layout/widget_pomodoro"
+    android:label="@string/widget_pomodoro_label"
+    android:description="@string/widget_pomodoro_description"/>

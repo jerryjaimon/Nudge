@@ -170,6 +170,10 @@ class AppStorage {
     if (!_gymBox!.containsKey('weigh_ins')) {
       await _gymBox!.put('weigh_ins', <dynamic>[]);
     }
+    // Body composition entries
+    if (!_gymBox!.containsKey('body_comp_entries')) {
+      await _gymBox!.put('body_comp_entries', <dynamic>[]);
+    }
     // Routines: list of {id, name, exercises: [name, sets: [{reps, weight}]]}
     if (!_gymBox!.containsKey('routines')) {
       await _gymBox!.put('routines', <dynamic>[]);

@@ -567,86 +567,29 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
             ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
               children: [
-          // Date nav
-          _DateNav(
-            dayIso: dayIso,
-            isToday: _isToday,
-            onPrev: () => _bumpDay(-1),
-            onNext: () => _bumpDay(1),
-            onPick: _pickDate,
+          // Date nav + weight inline
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: _DateNav(
+                  dayIso: dayIso,
+                  isToday: _isToday,
+                  onPrev: () => _bumpDay(-1),
+                  onNext: () => _bumpDay(1),
+                  onPick: _pickDate,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _WeightBadge(
+                bodyWeight: _bodyWeight,
+                onTap: _showWeightDialog,
+              ),
+            ],
           ),
           const SizedBox(height: 12),
 
-          // Compact stats strip (streak + target + week dots + body weight)
-          _StatsStrip(
-            streak: streak,
-            target: target,
-            weekDays: weekDays,
-            workedDays: workedDays,
-            bodyWeight: _bodyWeight,
-            riskColor: riskColor,
-            onWeightTap: () async {
-              final res = await showDialog<String>(
-                context: context,
-                builder: (ctx) {
-                  final ctrl = TextEditingController(
-                      text: _bodyWeight > 0 ? _bodyWeight.toString() : '');
-                  return AlertDialog(
-                    title: const Text('Log Weight'),
-                    content: TextField(
-                      controller: ctrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      autofocus: true,
-                      decoration: const InputDecoration(suffixText: 'kg'),
-                    ),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: const Text('Cancel')),
-                      TextButton(
-                          onPressed: () => Navigator.pop(ctx, ctrl.text),
-                          child: const Text('Save')),
-                    ],
-                  );
-                },
-              );
-              if (res != null) {
-                final v = double.tryParse(res) ?? 0.0;
-                _saveWeight(v);
-              }
-            },
-          ),
-          const SizedBox(height: 12),
-
-          // Activity card (health source selector + data)
-          if (_isToday) ...[
-            const _LogbookHeader(title: 'DAILY ACTIVITY', icon: Icons.directions_run_rounded),
-            const SizedBox(height: 12),
-            _ActivityCard(
-              source: _healthSource,
-              availableSources: _healthDataAll.keys.toList(),
-              healthLoading: _healthLoading,
-              healthData: _healthData,
-              stepsCtrl: _stepsCtrl,
-              calCtrl: _calCtrl,
-              onSourceChanged: _setHealthSource,
-              onManualSave: () {
-                final s = int.tryParse(_stepsCtrl.text) ?? 0;
-                final c = int.tryParse(_calCtrl.text) ?? 0;
-                setState(() {
-                  _manualHealthData = {
-                    'steps': s.toDouble(),
-                    'calories': c.toDouble(),
-                    'distance': 0.0,
-                  };
-                });
-              },
-            ),
-            const SizedBox(height: 12),
-          ],
-
-          // Quick actions row (Gemini + Routines + Progression)
+          // Quick actions row
           Row(
             children: [
               Expanded(
@@ -802,6 +745,14 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
                   },
                 ),
               ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StepsTile(
+                  steps: _healthData['steps']?.toInt() ?? 0,
+                  loading: _healthLoading,
+                  onTap: _showStepsAdjustSheet,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 20),
@@ -815,10 +766,6 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 20),
           ],
-
-          // Muscle group weekly summary
-          _MuscleGroupWeeklySummary(workouts: _workouts(), weekDays: weekDays),
-          const SizedBox(height: 20),
 
           // Logbook
           Row(
@@ -906,7 +853,7 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
             ),
         ],
       ),
-      _buildWeeklyInsights(weekDays, streak, target),
+      _buildWeeklyInsights(weekDays, streak, target, workedDays, riskColor),
       SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
         child: _buildLogbookList(),
@@ -1105,7 +1052,7 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
 
   // ── HC session helpers ────────────────────────────────────────────────────
   String _cleanHealthConnectSource(String source) {
-    if (source.contains('shealth')) return 'Samsung Health';
+    if (source.contains('shealth') || source.contains('sec.android')) return 'Samsung Health';
     if (source.contains('google.android.apps.fitness')) return 'Google Fit';
     if (source.contains('hevy')) return 'Hevy';
     if (source.contains('strong')) return 'Strong';
@@ -1158,20 +1105,221 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
     return (c is num) ? c.toDouble() : 0;
   }
 
-  Widget _buildWeeklyInsights(List<String> weekDays, int streak, int target) {
+  Future<void> _showWeightDialog() async {
+    final res = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final ctrl = TextEditingController(
+            text: _bodyWeight > 0 ? _bodyWeight.toString() : '');
+        return AlertDialog(
+          title: const Text('Log Weight'),
+          content: TextField(
+            controller: ctrl,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            autofocus: true,
+            decoration: const InputDecoration(suffixText: 'kg'),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, ctrl.text),
+                child: const Text('Save')),
+          ],
+        );
+      },
+    );
+    if (res != null) {
+      final v = double.tryParse(res) ?? 0.0;
+      _saveWeight(v);
+    }
+  }
 
-    // We'll calculate total workouts and sets for this week
+  Future<void> _showStepsAdjustSheet() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: NudgeTokens.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(
+            24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: NudgeTokens.textLow.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: NudgeTokens.green.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.directions_walk_rounded,
+                    size: 16, color: NudgeTokens.green),
+              ),
+              const SizedBox(width: 10),
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Activity Data',
+                    style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white)),
+                Text(
+                  _healthSource == 'manual'
+                      ? 'Manual override active'
+                      : 'Source: ${_healthSource == "Aggregated" ? "All Health Connect" : HealthService.cleanSource(_healthSource)}',
+                  style: const TextStyle(
+                      fontSize: 11, color: NudgeTokens.textLow),
+                ),
+              ]),
+              const Spacer(),
+              _SourceToggle(
+                value: _healthSource,
+                sources: _healthDataAll.keys.toList(),
+                onChanged: (s) {
+                  _setHealthSource(s);
+                  Navigator.pop(ctx);
+                },
+              ),
+            ]),
+            const SizedBox(height: 16),
+            if (_healthDataAll.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: NudgeTokens.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: NudgeTokens.border),
+                ),
+                child: Row(children: [
+                  Expanded(
+                      child: _MiniMetric(
+                          icon: Icons.directions_walk_rounded,
+                          color: NudgeTokens.green,
+                          value: '${_healthData['steps']?.toInt() ?? 0}',
+                          label: 'Steps')),
+                  const SizedBox(width: 16),
+                  Expanded(
+                      child: _MiniMetric(
+                          icon: Icons.local_fire_department_rounded,
+                          color: NudgeTokens.amber,
+                          value: '${_healthData['calories']?.toInt() ?? 0}',
+                          label: 'Calories')),
+                ]),
+              ),
+              const SizedBox(height: 16),
+            ],
+            Text('Manual Override',
+                style: GoogleFonts.outfit(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: NudgeTokens.textMid)),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _stepsCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration:
+                      const InputDecoration(labelText: 'Steps', isDense: true),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: _calCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                      labelText: 'Calories', isDense: true),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    _stepsCtrl.clear();
+                    _calCtrl.clear();
+                    final saved = AppStorage.settingsBox
+                        .get('gym_health_source') as String?;
+                    setState(() {
+                      _manualHealthData = {
+                        'steps': 0,
+                        'calories': 0,
+                        'distance': 0
+                      };
+                      _healthSource = saved ?? 'Aggregated';
+                    });
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Reset to Auto'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () {
+                    final s = int.tryParse(_stepsCtrl.text) ?? 0;
+                    final c = int.tryParse(_calCtrl.text) ?? 0;
+                    setState(() {
+                      _manualHealthData = {
+                        'steps': s.toDouble(),
+                        'calories': c.toDouble(),
+                        'distance': 0.0,
+                      };
+                      if (s > 0 || c > 0) _healthSource = 'manual';
+                    });
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Set Override'),
+                ),
+              ),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeeklyInsights(List<String> weekDays, int streak, int target, Set<String?> workedDays, Color riskColor) {
     final allWorkouts = _workouts();
     final thisWeekWorkouts = allWorkouts.where((w) => weekDays.contains(w['dayIso'])).toList();
-    
+
     int totalSetsThisWeek = 0;
+    double totalVolumeKg = 0;
+    double totalCaloriesThisWeek = 0;
     final muscleGroups = <String>{};
 
     for (var w in thisWeekWorkouts) {
       List exercises = (w['exercises'] as List?) ?? [];
       for (var ex in exercises) {
-        totalSetsThisWeek += ((ex['sets'] as List?) ?? []).length;
-        
+        final sets = (ex['sets'] as List?) ?? [];
+        totalSetsThisWeek += sets.length;
+        for (final s in sets) {
+          if (s is Map) {
+            final reps = (s['reps'] is int)
+                ? s['reps'] as int
+                : int.tryParse(s['reps']?.toString() ?? '') ?? 0;
+            final weight = (s['weight'] is num) ? (s['weight'] as num).toDouble() : 0.0;
+            totalVolumeKg += reps * weight;
+          }
+        }
         final name = (ex['name'] as String?) ?? '';
         for (final entry in ExerciseDB.categories.entries) {
           if (entry.value.contains(name)) {
@@ -1180,16 +1328,71 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
           }
         }
       }
+      totalCaloriesThisWeek += (w['calories'] as num?)?.toDouble() ?? 0.0;
     }
+
+    final workedThisWeek = workedDays.where((d) => weekDays.contains(d)).length;
+    const dayLetters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    final todayIso = _isoDay(DateTime.now());
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // Streak week dots
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            color: NudgeTokens.card,
+            border: Border.all(color: NudgeTokens.border),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: List.generate(7, (i) {
+              final iso = weekDays[i];
+              final isToday = iso == todayIso;
+              final isWorked = workedDays.contains(iso);
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(dayLetters[i],
+                      style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: NudgeTokens.textLow)),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isWorked
+                          ? riskColor
+                          : (isToday
+                              ? riskColor.withValues(alpha: 0.1)
+                              : Colors.transparent),
+                      border: Border.all(
+                          color: isToday && !isWorked
+                              ? riskColor.withValues(alpha: 0.3)
+                              : Colors.transparent),
+                    ),
+                    child: Center(
+                      child: Icon(Icons.check_rounded,
+                          size: 14,
+                          color: isWorked ? Colors.white : Colors.transparent),
+                    ),
+                  ),
+                ],
+              );
+            }),
+          ),
+        ),
+        const SizedBox(height: 16),
         _buildWeeklyAiHero(),
         const SizedBox(height: 16),
         if (muscleGroups.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(bottom: 24),
+            padding: const EdgeInsets.only(bottom: 16),
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1200,58 +1403,170 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
                     spacing: 8,
                     runSpacing: 8,
                     alignment: WrapAlignment.center,
-                    children: muscleGroups.map((g) => Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: NudgeTokens.gymB.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: NudgeTokens.gymB.withValues(alpha: 0.3)),
-                      ),
-                      child: Text(
-                        g.toUpperCase(),
-                        style: GoogleFonts.outfit(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          color: NudgeTokens.gymB,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    )).toList(),
+                    children: muscleGroups
+                        .map((g) => Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: NudgeTokens.gymB.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: NudgeTokens.gymB
+                                        .withValues(alpha: 0.3)),
+                              ),
+                              child: Text(
+                                g.toUpperCase(),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  color: NudgeTokens.gymB,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ))
+                        .toList(),
                   ),
                 ],
               ),
             ),
           ),
+        // Weekly Progress summary
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: NudgeTokens.surface,
+            gradient: LinearGradient(
+              colors: [
+                NudgeTokens.gymB.withValues(alpha: 0.12),
+                NudgeTokens.surface
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: NudgeTokens.border),
+            border: Border.all(color: NudgeTokens.gymB.withValues(alpha: 0.25)),
           ),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'This Week',
-                style: GoogleFonts.outfit(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: NudgeTokens.gymB.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.bar_chart_rounded,
+                        size: 16, color: NudgeTokens.gymB),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('Weekly Progress',
+                      style: GoogleFonts.outfit(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white)),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: riskColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                      border:
+                          Border.all(color: riskColor.withValues(alpha: 0.3)),
+                    ),
+                    child: Text('$streak wk streak',
+                        style: GoogleFonts.outfit(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: riskColor,
+                            letterSpacing: 0.5)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  const Icon(Icons.calendar_today_rounded,
+                      size: 13, color: NudgeTokens.textMid),
+                  const SizedBox(width: 6),
+                  const Text('Active days',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: NudgeTokens.textMid,
+                          fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  Text('$workedThisWeek / $target days',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: riskColor,
+                          fontWeight: FontWeight.w700)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: target > 0
+                      ? (workedThisWeek / target).clamp(0.0, 1.0)
+                      : 0,
+                  backgroundColor: NudgeTokens.border,
+                  valueColor: AlwaysStoppedAnimation<Color>(riskColor),
+                  minHeight: 6,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildStatColumn('Workouts', '${thisWeekWorkouts.length}', NudgeTokens.gymB),
-                  _buildStatColumn('Sets', '$totalSetsThisWeek', NudgeTokens.amber),
-                  _buildStatColumn('Streak', '$streak wks', NudgeTokens.green),
+                  _buildStatColumn(
+                      'Workouts', '${thisWeekWorkouts.length}', NudgeTokens.gymB),
+                  _buildStatColumn(
+                      'Sets', '$totalSetsThisWeek', NudgeTokens.amber),
+                  _buildStatColumn(
+                      'Muscles', '${muscleGroups.length}', NudgeTokens.green),
+                  if (totalVolumeKg >= 1000)
+                    _buildStatColumn(
+                        'Volume',
+                        '${(totalVolumeKg / 1000).toStringAsFixed(1)}t',
+                        NudgeTokens.purple)
+                  else if (totalVolumeKg > 0)
+                    _buildStatColumn('Volume',
+                        '${totalVolumeKg.toStringAsFixed(0)}kg', NudgeTokens.purple),
                 ],
               ),
+              if (totalCaloriesThisWeek > 0) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: NudgeTokens.amber.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: NudgeTokens.amber.withValues(alpha: 0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.local_fire_department_rounded,
+                          size: 14, color: NudgeTokens.amber),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${totalCaloriesThisWeek.toStringAsFixed(0)} kcal burned this week',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: NudgeTokens.amber),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
         const SizedBox(height: 16),
+        // Activity Volume bar chart
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -1264,7 +1579,6 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
             children: [
               Text(
                 'Activity Volume',
-
                 style: GoogleFonts.outfit(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -1277,31 +1591,36 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: weekDays.map((iso) {
                   final dayName = _getDayName(iso);
-                  final w = thisWeekWorkouts.firstWhere((element) => element['dayIso'] == iso, orElse: () => {});
+                  final w = thisWeekWorkouts.firstWhere(
+                      (element) => element['dayIso'] == iso,
+                      orElse: () => {});
                   int sets = 0;
                   if (w.isNotEmpty) {
                     List exList = (w['exercises'] as List?) ?? [];
-                    sets = exList.fold(0, (sum, ex) => sum + ((ex['sets'] as List?) ?? []).length);
+                    sets = exList.fold(
+                        0,
+                        (sum, ex) =>
+                            sum + ((ex['sets'] as List?) ?? []).length);
                   }
-                  
-                  // Max height 100
-                  double height = sets.toDouble() * 3.0; // scale factor
+                  double height = sets.toDouble() * 3.0;
                   if (height > 100) height = 100;
-                  if (height < 4) height = 4; // minimum height
-                  
+                  if (height < 4) height = 4;
                   final isToday = iso == _isoDay(DateTime.now());
-
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (sets > 0)
-                        Text('$sets', style: const TextStyle(fontSize: 10, color: NudgeTokens.textLow)),
+                        Text('$sets',
+                            style: const TextStyle(
+                                fontSize: 10, color: NudgeTokens.textLow)),
                       const SizedBox(height: 4),
                       Container(
                         width: 20,
                         height: height,
                         decoration: BoxDecoration(
-                          color: sets > 0 ? NudgeTokens.gymB : NudgeTokens.border,
+                          color: sets > 0
+                              ? NudgeTokens.gymB
+                              : NudgeTokens.border,
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),
@@ -1310,8 +1629,12 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
                         dayName,
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: isToday ? FontWeight.w800 : FontWeight.w500,
-                          color: isToday ? NudgeTokens.gymB : NudgeTokens.textLow,
+                          fontWeight: isToday
+                              ? FontWeight.w800
+                              : FontWeight.w500,
+                          color: isToday
+                              ? NudgeTokens.gymB
+                              : NudgeTokens.textLow,
                         ),
                       ),
                     ],
@@ -1727,6 +2050,128 @@ class _StatsStrip extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Weight Badge (inline with DateNav)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _WeightBadge extends StatelessWidget {
+  final double bodyWeight;
+  final VoidCallback onTap;
+  const _WeightBadge({required this.bodyWeight, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: NudgeTokens.card,
+          border: Border.all(color: NudgeTokens.border),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.scale_rounded, size: 11, color: NudgeTokens.textMid),
+                SizedBox(width: 3),
+                Text('Weight',
+                    style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: NudgeTokens.textMid)),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              bodyWeight > 0
+                  ? '${bodyWeight % 1 == 0 ? bodyWeight.toStringAsFixed(0) : bodyWeight.toStringAsFixed(1)} kg'
+                  : '--',
+              style: GoogleFonts.outfit(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  height: 1.1),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Steps Tile (4th action tile)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StepsTile extends StatelessWidget {
+  final int steps;
+  final bool loading;
+  final VoidCallback onTap;
+  const _StepsTile(
+      {required this.steps, required this.loading, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = loading
+        ? '…'
+        : (steps >= 1000
+            ? '${(steps / 1000).toStringAsFixed(1)}k'
+            : (steps > 0 ? '$steps' : '--'));
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            color: NudgeTokens.card,
+            border:
+                Border.all(color: NudgeTokens.green.withValues(alpha: 0.25)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: NudgeTokens.green.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: loading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: NudgeTokens.green))
+                    : const Icon(Icons.directions_walk_rounded,
+                        color: NudgeTokens.green, size: 16),
+              ),
+              const SizedBox(height: 6),
+              Text(label,
+                  style: const TextStyle(
+                      color: NudgeTokens.green,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14)),
+              const Text('Steps',
+                  style: TextStyle(
+                      color: NudgeTokens.textLow,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -43,6 +43,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.READ_SMS"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
     <application
         android:label="nudge"
@@ -88,7 +92,7 @@
             android:value="2" />
 
         <!-- Home screen widgets -->
-        <receiver android:name=".GymWidget" android:exported="true">
+        <receiver android:name=".GymWidget" android:exported="true" android:label="@string/widget_gym_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
             </intent-filter>
@@ -96,7 +100,7 @@
                 android:resource="@xml/widget_gym_info"/>
         </receiver>
 
-        <receiver android:name=".FinanceWidget" android:exported="true">
+        <receiver android:name=".FinanceWidget" android:exported="true" android:label="@string/widget_finance_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
             </intent-filter>
@@ -104,7 +108,7 @@
                 android:resource="@xml/widget_finance_info"/>
         </receiver>
 
-        <receiver android:name=".HabitsWidget" android:exported="true">
+        <receiver android:name=".HabitsWidget" android:exported="true" android:label="@string/widget_habits_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
             </intent-filter>
@@ -112,7 +116,7 @@
                 android:resource="@xml/widget_habits_info"/>
         </receiver>
 
-        <receiver android:name=".PomodoroWidget" android:exported="true">
+        <receiver android:name=".PomodoroWidget" android:exported="true" android:label="@string/widget_pomodoro_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
             </intent-filter>
@@ -120,7 +124,7 @@
                 android:resource="@xml/widget_pomodoro_info"/>
         </receiver>
 
-        <receiver android:name=".FoodWidget" android:exported="true">
+        <receiver android:name=".FoodWidget" android:exported="true" android:label="@string/widget_food_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
             </intent-filter>
@@ -128,13 +132,27 @@
                 android:resource="@xml/widget_food_info"/>
         </receiver>
 
-        <receiver android:name=".BackupWidget" android:exported="true">
+        <receiver android:name=".BackupWidget" android:exported="true" android:label="@string/widget_backup_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
             </intent-filter>
             <meta-data android:name="android.appwidget.provider"
                 android:resource="@xml/widget_backup_info"/>
         </receiver>
+
+        <receiver android:name=".DayTrackerWidget" android:exported="true" android:label="@string/widget_day_tracker_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_day_tracker_info"/>
+        </receiver>
+
+        <!-- Geolocator foreground service for background GPS tracking -->
+        <service
+            android:name="com.baseflow.geolocator.GeolocatorService"
+            android:foregroundServiceType="location"
+            android:exported="false"/>
 
         <service
             android:name=".PomodoroBlockerService"
@@ -152,5 +170,16 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!-- FileProvider for sharing downloaded APK installs -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

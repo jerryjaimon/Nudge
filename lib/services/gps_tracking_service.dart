@@ -94,8 +94,8 @@ class GpsTrackingService {
   bool get isIdle => _state == TrackingState.idle;
 
   // Auto-pause when slower than 0.5 m/s (~1.8 km/h) for 6 seconds
-  static const double _autoPauseThresholdMs = 0.5;
-  static const Duration _autoPauseDelay = Duration(seconds: 6);
+  static const double _autoPauseThresholdMs = 0.3; // ~1 km/h — only pause when truly stationary
+  static const Duration _autoPauseDelay = Duration(seconds: 20); // longer delay avoids false pauses on app switch
 
   /// Check/request permissions. Returns null on success, error message on failure.
   Future<String?> checkPermissions() async {
@@ -145,12 +145,16 @@ class GpsTrackingService {
     _state = TrackingState.paused;
     _autoPaused = auto;
     _pauseStart = DateTime.now();
-    _positionSub?.cancel();
-    _positionSub = null;
     _autoPauseTimer?.cancel();
     _autoPauseTimer = null;
-    _tickTimer?.cancel();
-    _tickTimer = null;
+    if (!auto) {
+      // Manual pause: stop GPS stream entirely
+      _positionSub?.cancel();
+      _positionSub = null;
+      _tickTimer?.cancel();
+      _tickTimer = null;
+    }
+    // Auto-pause: keep stream + tick alive so auto-resume can trigger
     _emit();
   }
 
@@ -160,9 +164,11 @@ class GpsTrackingService {
       _pausedDuration += DateTime.now().difference(_pauseStart!);
       _pauseStart = null;
     }
+    final wasAutoPaused = _autoPaused;
     _autoPaused = false;
     _state = TrackingState.active;
-    _startPositionStream();
+    // Auto-pause kept the stream alive — only restart it for manual resume
+    if (!wasAutoPaused) _startPositionStream();
     _emit();
   }
 
@@ -209,8 +215,8 @@ class GpsTrackingService {
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 2,
         foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: 'Run in progress',
-          notificationText: 'Nudge is tracking your activity in the background.',
+          notificationTitle: 'Cardio Coach',
+          notificationText: 'Tracking your activity in the background.',
           enableWakeLock: true,
         ),
       );
@@ -232,20 +238,28 @@ class GpsTrackingService {
   }
 
   void _onPosition(Position pos) {
-    if (_state != TrackingState.active) return;
+    // Process positions even during auto-pause so we can detect auto-resume.
+    // Ignore positions during manual pause or after stop.
+    final isAutoPaused = _state == TrackingState.paused && _autoPaused;
+    if (_state != TrackingState.active && !isAutoPaused) return;
 
     final speed = pos.speed < 0 ? 0.0 : pos.speed;
 
-    // Auto-pause detection
+    // Auto-pause / auto-resume detection
     if (speed < _autoPauseThresholdMs) {
-      _autoPauseTimer ??= Timer(_autoPauseDelay, () {
-        if (_state == TrackingState.active) pause(auto: true);
-      });
+      if (_state == TrackingState.active) {
+        _autoPauseTimer ??= Timer(_autoPauseDelay, () {
+          if (_state == TrackingState.active) pause(auto: true);
+        });
+      }
     } else {
       _autoPauseTimer?.cancel();
       _autoPauseTimer = null;
-      if (_state == TrackingState.paused && _autoPaused) resume();
+      if (isAutoPaused) resume();
     }
+
+    // Don't record points while paused
+    if (_state != TrackingState.active) return;
 
     final point = GeoTrackPoint(
       lat: pos.latitude,

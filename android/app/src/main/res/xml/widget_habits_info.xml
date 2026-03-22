@@ -8,4 +8,6 @@
     android:updatePeriodMillis="1800000"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
-    android:previewLayout="@layout/widget_habits"/>
+    android:previewLayout="@layout/widget_habits"
+    android:label="@string/widget_habits_label"
+    android:description="@string/widget_habits_description"/>

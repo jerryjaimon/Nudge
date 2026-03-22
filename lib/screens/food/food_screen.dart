@@ -173,36 +173,15 @@ class _FoodScreenState extends State<FoodScreen> {
                       ),
                     ),
                   )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final e = _entries[index];
-                    return _FoodTile(
-                      entry: e,
-                      onDelete: () async {
-                        await FoodService.deleteEntry(e['id']);
-                        _refresh();
-                      },
-                      onTap: () async {
-                        final didEdit = await showModalBottomSheet<bool>(
-                          context: context,
-                          isScrollControlled: true,
-                          backgroundColor: Colors.transparent,
-                          builder: (_) => EditFoodSheet(entry: e),
-                        );
-                        if (didEdit == true) {
-                          _refresh();
-                        }
-                      },
-                    );
-                  },
-                  childCount: _entries.length,
-                ),
-              ),
-            ),
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate(
+                        _buildMealGroups(context),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -225,6 +204,120 @@ class _FoodScreenState extends State<FoodScreen> {
       backgroundColor: Colors.transparent,
       builder: (_) => const AddFoodSheet(),
     ).then((_) => _refresh());
+  }
+
+  void _addFoodToMeal(BuildContext context, String meal) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => AddFoodSheet(initialMeal: meal),
+    ).then((_) => _refresh());
+  }
+
+  void _reanalyzeMeal(BuildContext context, String meal, List<Map<String, dynamic>> items) {
+    final description = items.map((e) => e['name'] ?? 'food').join(', ');
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => AddFoodSheet(initialMeal: meal, initialDescription: description),
+    ).then((_) => _refresh());
+  }
+
+  List<Widget> _buildMealGroups(BuildContext context) {
+    const mealOrder = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    for (final e in _entries) {
+      final meal = (e['mealType'] as String?) ?? 'Other';
+      grouped.putIfAbsent(meal, () => []).add(e);
+    }
+    final keys = grouped.keys.toList()
+      ..sort((a, b) {
+        final ai = mealOrder.indexOf(a);
+        final bi = mealOrder.indexOf(b);
+        if (ai == -1 && bi == -1) return a.compareTo(b);
+        if (ai == -1) return 1;
+        if (bi == -1) return -1;
+        return ai.compareTo(bi);
+      });
+
+    final widgets = <Widget>[];
+    for (final meal in keys) {
+      final items = grouped[meal]!;
+      final totalCal = items.fold<double>(0, (sum, e) {
+        final servings = (e['servingsConsumed'] as num?)?.toDouble() ?? 1.0;
+        return sum + ((e['calories'] ?? e['caloriesPerServing'] ?? 0) as num).toDouble() * servings;
+      });
+
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(top: 12, bottom: 6),
+        child: Row(
+          children: [
+            Text(
+              meal.toUpperCase(),
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: NudgeTokens.textLow, letterSpacing: 1.2),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '${totalCal.toInt()} kcal',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: NudgeTokens.foodB),
+            ),
+            const Spacer(),
+            InkWell(
+              onTap: () => _reanalyzeMeal(context, meal, items),
+              borderRadius: BorderRadius.circular(8),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.auto_awesome_rounded, size: 13, color: NudgeTokens.textLow),
+                    SizedBox(width: 3),
+                    Text('Re-analyze', style: TextStyle(fontSize: 11, color: NudgeTokens.textLow, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+            InkWell(
+              onTap: () => _addFoodToMeal(context, meal),
+              borderRadius: BorderRadius.circular(8),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add_rounded, size: 14, color: NudgeTokens.foodB),
+                    SizedBox(width: 2),
+                    Text('Add', style: TextStyle(fontSize: 11, color: NudgeTokens.foodB, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ));
+
+      for (final e in items) {
+        widgets.add(_FoodTile(
+          entry: e,
+          onDelete: () async {
+            await FoodService.deleteEntry(e['id']);
+            _refresh();
+          },
+          onTap: () async {
+            final didEdit = await showModalBottomSheet<bool>(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => EditFoodSheet(entry: e),
+            );
+            if (didEdit == true) _refresh();
+          },
+        ));
+      }
+    }
+    return widgets;
   }
 }
 
@@ -320,10 +413,37 @@ class _HeaderCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
+          Builder(builder: (context) {
+            final diff = (goal - today).toInt();
+            final isOver = today > goal;
+            return Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: (isOver ? NudgeTokens.red : NudgeTokens.green).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: (isOver ? NudgeTokens.red : NudgeTokens.green).withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    isOver
+                        ? '${diff.abs()} kcal over goal'
+                        : '${diff.abs()} kcal under goal',
+                    style: TextStyle(
+                      color: isOver ? NudgeTokens.red : NudgeTokens.green,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }),
+          const SizedBox(height: 4),
           Text(
-            '${(goal - today).toInt()} kcal remaining',
+            today > goal ? 'Consider cutting back' : 'On track for your calorie goal',
             style: const TextStyle(
-              color: NudgeTokens.textMid,
+              color: NudgeTokens.textLow,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),

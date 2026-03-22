@@ -17,9 +17,11 @@ import 'food/nutrition_settings_screen.dart';
 import 'detox/detox_screen.dart';
 import 'settings/theme_settings_screen.dart';
 import 'settings/ai_error_log_screen.dart';
+import 'settings/developer_options_screen.dart';
 import '../services/firebase_backup_service.dart';
 import '../services/auth_service.dart';
 import '../services/auto_backup_service.dart';
+import '../services/update_service.dart';
 import 'auth/sign_in_screen.dart';
 import 'onboarding_screen.dart';
 
@@ -135,6 +137,166 @@ class _SettingsScreenState extends State<SettingsScreen> {
        await AppStorage.settingsBox.put('gemini_api_key_1', oldKey);
        await AppStorage.settingsBox.delete('gemini_api_key');
     }
+  }
+
+  static const _allModules = [
+    ('gym',       'Gym & Fitness',    Icons.fitness_center_rounded),
+    ('food',      'Food & Nutrition', Icons.restaurant_rounded),
+    ('health',    'Health',           Icons.monitor_heart_rounded),
+    ('my_habits', 'My Habits',        Icons.checklist_rounded),
+    ('habits',    'Protected Habits', Icons.lock_rounded),
+    ('pomodoro',  'Pomodoro',         Icons.timer_rounded),
+    ('finance',   'Finance',          Icons.account_balance_wallet_rounded),
+    ('movies',    'Movies',           Icons.local_movies_rounded),
+    ('books',     'Books',            Icons.menu_book_rounded),
+    ('detox',     'Digital Detox',    Icons.timer_off_rounded),
+  ];
+
+  Future<void> _checkForUpdates(BuildContext ctx) async {
+    // Show checking indicator
+    if (!ctx.mounted) return;
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      const SnackBar(content: Text('Checking for updates…'), duration: Duration(seconds: 2)),
+    );
+
+    final info = await UpdateService.checkForUpdate();
+
+    if (!ctx.mounted) return;
+    if (info == null) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(content: Text('Could not reach update server. Check your connection.')),
+      );
+      return;
+    }
+
+    if (!info.isNewer) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        SnackBar(content: Text('You\'re up to date (v${UpdateService.currentVersion})')),
+      );
+      return;
+    }
+
+    // Newer version available — show confirmation dialog
+    final apkUrl = info.apkUrl;
+    final confirmed = await showDialog<bool>(
+      context: ctx,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: NudgeTokens.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.system_update_rounded, color: NudgeTokens.purple, size: 22),
+            const SizedBox(width: 10),
+            Text('v${info.version} Available',
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${info.name}',
+                style: const TextStyle(color: NudgeTokens.textMid, fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 10),
+            Text(info.changelog,
+                style: const TextStyle(color: NudgeTokens.textLow, fontSize: 12, height: 1.5)),
+            if (apkUrl == null) ...[
+              const SizedBox(height: 12),
+              const Text('No APK attached to this release.',
+                  style: TextStyle(color: NudgeTokens.red, fontSize: 12)),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dCtx, false),
+            child: const Text('Later', style: TextStyle(color: NudgeTokens.textMid)),
+          ),
+          if (apkUrl != null)
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: NudgeTokens.purple,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => Navigator.pop(dCtx, true),
+              child: const Text('Download & Install', style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || apkUrl == null || !ctx.mounted) return;
+
+    // Show download progress dialog
+    double progress = 0;
+    showDialog(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (pCtx) => StatefulBuilder(
+        builder: (_, setS) {
+          return AlertDialog(
+            backgroundColor: NudgeTokens.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('Downloading…', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(
+                  value: progress > 0 ? progress : null,
+                  backgroundColor: NudgeTokens.elevated,
+                  color: NudgeTokens.purple,
+                ),
+                const SizedBox(height: 8),
+                Text(progress > 0 ? '${(progress * 100).toInt()}%' : 'Starting…',
+                    style: const TextStyle(color: NudgeTokens.textLow, fontSize: 12)),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+
+    final file = await UpdateService.downloadApk(apkUrl, (p) {
+      progress = p;
+      if (ctx.mounted) setState(() {});
+    });
+
+    if (!ctx.mounted) return;
+    Navigator.of(ctx, rootNavigator: true).pop(); // close progress dialog
+
+    if (file == null) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(content: Text('Download failed. Please try again.')),
+      );
+      return;
+    }
+
+    await UpdateService.installApk(file.path);
+  }
+
+  List<Widget> _buildModuleToggles() {
+    final enabled = AppStorage.enabledModules.toSet();
+    return _allModules.map((m) {
+      final (key, label, icon) = m;
+      final isOn = enabled.contains(key);
+      return _SettingTile(
+        icon: icon,
+        title: label,
+        subtitle: isOn ? 'Visible on Home' : 'Hidden',
+        trailing: Switch(
+          value: isOn,
+          activeThumbColor: NudgeTokens.purple,
+          activeTrackColor: NudgeTokens.purple.withValues(alpha: 0.35),
+          onChanged: (v) {
+            final mods = AppStorage.enabledModules.toList();
+            if (v) { if (!mods.contains(key)) mods.add(key); }
+            else   { mods.remove(key); }
+            AppStorage.enabledModules = mods;
+            setState(() {});
+          },
+        ),
+      );
+    }).toList();
   }
 
   Future<String?> _askPassphrase({required bool isRestore}) async {
@@ -357,6 +519,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             },
           ),
+          const _SectionHeader(title: 'Modules'),
+          ..._buildModuleToggles(),
+          const SizedBox(height: 12),
           const _SectionHeader(title: 'Appearance'),
           _SettingTile(
             icon: Icons.palette_rounded,
@@ -805,6 +970,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 24),
           const _SectionHeader(title: 'Debug'),
           _SettingTile(
+            icon: Icons.science_rounded,
+            title: 'Developer Options',
+            subtitle: 'Seed test data for all modules',
+            onTap: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DeveloperOptionsScreen()));
+            },
+            trailing: const Icon(Icons.chevron_right_rounded, color: NudgeTokens.textLow, size: 20),
+          ),
+          _SettingTile(
             icon: Icons.monitor_heart_rounded,
             title: 'Health Connect Raw Data',
             subtitle: 'Inspect all steps, calories, workouts',
@@ -829,6 +1003,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () {
               Navigator.push(context, MaterialPageRoute(builder: (_) => const AiErrorLogScreen()));
             },
+            trailing: const Icon(Icons.chevron_right_rounded, color: NudgeTokens.textLow, size: 20),
+          ),
+          const SizedBox(height: 32),
+          const _SectionHeader(title: 'App'),
+          _SettingTile(
+            icon: Icons.system_update_rounded,
+            title: 'Check for Updates',
+            subtitle: 'Current: v${UpdateService.currentVersion}',
+            onTap: () => _checkForUpdates(context),
             trailing: const Icon(Icons.chevron_right_rounded, color: NudgeTokens.textLow, size: 20),
           ),
           const SizedBox(height: 32),

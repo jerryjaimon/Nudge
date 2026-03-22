@@ -9,7 +9,7 @@ import android.widget.RemoteViews
 
 class FoodWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        val sp        = context.getSharedPreferences("HomeWidgetPlugin", Context.MODE_PRIVATE)
+        val sp        = context.getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
         val calories  = sp.getString("food_calories", "0") ?: "0"
         val percent   = sp.getInt("food_percent", 0)
         val goalLabel = sp.getString("food_goal_label", "of 2000 kcal goal") ?: "of 2000 kcal goal"

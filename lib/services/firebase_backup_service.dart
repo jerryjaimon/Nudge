@@ -97,7 +97,18 @@ class FirebaseBackupService {
   static Future<void> backup(String passphrase) async {
     if (passphrase.isEmpty) throw ArgumentError('Passphrase must not be empty');
     final uid = _requireUid();
+    await _doBackup(passphrase, uid);
+  }
 
+  /// Called from background isolate where FirebaseAuth state may not be
+  /// available — caller supplies the UID directly from WorkManager inputData.
+  static Future<void> backupWithUid(String passphrase, String uid) async {
+    if (passphrase.isEmpty) throw ArgumentError('Passphrase must not be empty');
+    if (uid.isEmpty) throw ArgumentError('UID must not be empty');
+    await _doBackup(passphrase, uid);
+  }
+
+  static Future<void> _doBackup(String passphrase, String uid) async {
     // Write account metadata (no user content)
     await _db.collection('users').doc(uid).set({
       'email': AuthService.email,
