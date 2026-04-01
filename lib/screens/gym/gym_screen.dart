@@ -16,6 +16,7 @@ import 'exercise_thumbnail.dart';
 import 'muscle_mannequin.dart';
 import '../../utils/ai_analysis_service.dart';
 import '../../utils/ai_routine_generator.dart';
+import '../../services/health_center_service.dart';
 import '../../utils/pdf_export_service.dart';
 import '../health/analysis_report_screen.dart';
 import 'package:nudge/utils/nudge_theme_extension.dart';
@@ -57,6 +58,9 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _hcWorkouts = [];
   bool _hcWorkoutsLoading = false;
   bool _generatingRoutine = false;
+
+  // Monthly calendar state
+  DateTime _calMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
 
   // Manual input controllers
   final _stepsCtrl = TextEditingController();
@@ -878,7 +882,7 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
               ),
             ));
             if (res == null) return;
-            await _handleEditorResult(res);
+            await _handleEditorResult(res, showSummary: true);
           },
           label: Text(
             workout == null ? 'Log Workout' : 'Edit Workout',
@@ -918,7 +922,7 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
         ),
       ));
       if (res != null) {
-        await _handleEditorResult(res);
+        await _handleEditorResult(res, showSummary: true);
       }
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -928,7 +932,7 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
   }
 
   // ── Shared workout editor result handler ─────────────────────────────────
-  Future<void> _handleEditorResult(Map<String, dynamic> res) async {
+  Future<void> _handleEditorResult(Map<String, dynamic> res, {bool showSummary = false}) async {
     final action = (res['__action'] as String?) ?? 'save';
     final list = _workouts();
 
@@ -945,6 +949,9 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
     final id = cleaned['id']?.toString();
     if (id == null) return;
 
+    // Capture lastByExercise BEFORE saving so comparisons are against prior sessions
+    final lastBy = _lastByExercise(excludeDayIso: cleaned['dayIso'] as String? ?? '');
+
     final idx = list.indexWhere((w) => w['id']?.toString() == id);
     if (idx >= 0) {
       list[idx] = cleaned;
@@ -952,7 +959,12 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
       list.insert(0, cleaned);
     }
     await _saveWorkouts(list);
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      if (showSummary) {
+        _showPostWorkoutSummary(cleaned, lastBy);
+      }
+    }
   }
 
   // ── HC Session Delete ─────────────────────────────────────────────────────
@@ -1103,6 +1115,85 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
     if (workout == null) return 0;
     final c = workout['calories'];
     return (c is num) ? c.toDouble() : 0;
+  }
+
+  Future<void> _showGymExportSheet() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: NudgeTokens.elevated,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Export Gym Activity',
+                style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            const Text('Choose a date range to export as PDF',
+                style: TextStyle(fontSize: 13, color: NudgeTokens.textLow)),
+            const SizedBox(height: 20),
+            Row(children: [
+              Expanded(
+                child: _ExportRangeButton(
+                  label: 'Today',
+                  icon: Icons.today_rounded,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    PdfExportService.exportGymWorkoutsRange(today, today);
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ExportRangeButton(
+                  label: '1 Week',
+                  icon: Icons.calendar_view_week_rounded,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    final weekStart = today.subtract(Duration(days: today.weekday - 1));
+                    PdfExportService.exportGymWorkoutsRange(weekStart, today);
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ExportRangeButton(
+                  label: 'Custom',
+                  icon: Icons.date_range_rounded,
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final range = await showDateRangePicker(
+                      context: context,
+                      firstDate: DateTime(2020),
+                      lastDate: today.add(const Duration(days: 1)),
+                      builder: (context, child) => Theme(
+                        data: Theme.of(context).copyWith(
+                          dialogTheme: const DialogThemeData(
+                              backgroundColor: NudgeTokens.elevated),
+                          colorScheme: Theme.of(context)
+                              .colorScheme
+                              .copyWith(surface: NudgeTokens.elevated),
+                        ),
+                        child: child!,
+                      ),
+                    );
+                    if (range != null) {
+                      await PdfExportService.exportGymWorkoutsRange(
+                          range.start, range.end);
+                    }
+                  },
+                ),
+              ),
+            ]),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _showWeightDialog() async {
@@ -1297,6 +1388,122 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
     );
   }
 
+  Map<String, dynamic> _computeRank() {
+    final total = _workouts().length;
+    if (total < 5)   return {'rank': 'Rookie',    'emoji': '🥉', 'color': NudgeTokens.textLow,  'current': total,  'next': 5,   'progress': total / 5.0};
+    if (total < 15)  return {'rank': 'Trainee',   'emoji': '💪', 'color': NudgeTokens.green,    'current': total,  'next': 15,  'progress': (total - 5) / 10.0};
+    if (total < 30)  return {'rank': 'Regular',   'emoji': '🏅', 'color': NudgeTokens.blue,     'current': total,  'next': 30,  'progress': (total - 15) / 15.0};
+    if (total < 60)  return {'rank': 'Dedicated', 'emoji': '⚡', 'color': NudgeTokens.amber,    'current': total,  'next': 60,  'progress': (total - 30) / 30.0};
+    if (total < 100) return {'rank': 'Elite',     'emoji': '🏆', 'color': NudgeTokens.gymB,     'current': total,  'next': 100, 'progress': (total - 60) / 40.0};
+    return              {'rank': 'Legend',    'emoji': '👑', 'color': NudgeTokens.purple,   'current': total,  'next': null, 'progress': 1.0};
+  }
+
+  Future<void> _showPostWorkoutSummary(Map<String, dynamic> workout, Map<String, dynamic> lastBy) async {
+    if (!mounted) return;
+    final hasApiKey = AppStorage.activeGeminiKey.isNotEmpty;
+    if (!hasApiKey) return;
+    final exercises = (workout['exercises'] as List?) ?? [];
+    if (exercises.isEmpty) return;
+
+    // Show loading sheet immediately
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      backgroundColor: NudgeTokens.elevated,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (sheetCtx) => _PostWorkoutSummarySheet(
+        workout: workout,
+        lastByExercise: lastBy,
+        onClose: () => Navigator.pop(sheetCtx),
+      ),
+    );
+  }
+
+  Widget _buildWeightLossCard() {
+    final tdee = HealthCenterService.computeTDEE();
+    if (tdee == null) return const SizedBox();
+
+    final now = DateTime.now();
+    final sevenDaysAgo = now.subtract(const Duration(days: 7));
+
+    // Avg gym calories burned last 7 days
+    final recentWorkouts = _workouts().where((w) {
+      final d = DateTime.tryParse((w['dayIso'] as String?) ?? '');
+      return d != null && d.isAfter(sevenDaysAgo);
+    }).toList();
+    final gymCalWeek = recentWorkouts.fold<double>(0, (s, w) => s + ((w['calories'] as num?)?.toDouble() ?? 0));
+    final avgGymBurn = gymCalWeek / 7.0;
+
+    // Avg food intake last 7 days from health history
+    final healthHistory = (AppStorage.gymBox.get('health_history', defaultValue: <dynamic>[]) as List).cast<Map>();
+    final recentHealth = healthHistory.where((h) {
+      final d = DateTime.tryParse((h['dayIso'] as String?) ?? '');
+      return d != null && d.isAfter(sevenDaysAgo);
+    }).toList();
+    final avgFoodCals = recentHealth.isEmpty
+        ? 0.0
+        : recentHealth.fold<double>(0, (s, h) => s + ((h['foodCalories'] as num?)?.toDouble() ?? 0)) / recentHealth.length;
+
+    // deficit = TDEE + exercise burn - food intake
+    final dailyDeficit = tdee.toDouble() + avgGymBurn - (avgFoodCals > 0 ? avgFoodCals : tdee.toDouble());
+    final weeklyDeficit = dailyDeficit * 7;
+    final kgPerWeek = weeklyDeficit / 7700.0;
+
+    final losing = kgPerWeek > 0;
+    final absKg = kgPerWeek.abs();
+    final color = losing ? NudgeTokens.green : NudgeTokens.amber;
+    final icon = losing ? Icons.trending_down_rounded : Icons.trending_up_rounded;
+    final label = losing ? 'Estimated weekly loss' : 'Estimated weekly gain';
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: NudgeTokens.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.monitor_weight_outlined, size: 15, color: color),
+            const SizedBox(width: 8),
+            Text('WEIGHT ESTIMATE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color, letterSpacing: 1.2)),
+          ]),
+          const SizedBox(height: 14),
+          Row(children: [
+            Icon(icon, color: color, size: 28),
+            const SizedBox(width: 12),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${absKg.toStringAsFixed(2)} kg / week', style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.w900, color: color)),
+              Text(label, style: const TextStyle(fontSize: 12, color: NudgeTokens.textLow)),
+            ]),
+          ]),
+          const SizedBox(height: 14),
+          // breakdown
+          _WeightLossRow(label: 'TDEE (maintenance)', value: '$tdee kcal'),
+          if (avgGymBurn > 0)
+            _WeightLossRow(label: 'Avg gym burn/day', value: '+${avgGymBurn.toStringAsFixed(0)} kcal'),
+          if (avgFoodCals > 0)
+            _WeightLossRow(label: 'Avg food intake/day', value: '${avgFoodCals.toStringAsFixed(0)} kcal'),
+          _WeightLossRow(
+            label: 'Daily deficit',
+            value: '${dailyDeficit >= 0 ? '' : '-'}${dailyDeficit.abs().toStringAsFixed(0)} kcal',
+            color: color,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            avgFoodCals == 0
+                ? 'Log food intake in the Food screen for a more accurate estimate.'
+                : '1 kg of fat ≈ 7,700 kcal. Results are estimates based on logged data.',
+            style: const TextStyle(fontSize: 10, color: NudgeTokens.textLow, fontStyle: FontStyle.italic),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildWeeklyInsights(List<String> weekDays, int streak, int target, Set<String?> workedDays, Color riskColor) {
     final allWorkouts = _workouts();
     final thisWeekWorkouts = allWorkouts.where((w) => weekDays.contains(w['dayIso'])).toList();
@@ -1332,105 +1539,21 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
     }
 
     final workedThisWeek = workedDays.where((d) => weekDays.contains(d)).length;
-    const dayLetters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
     final todayIso = _isoDay(DateTime.now());
+
+    final allWorkedDays = _workouts()
+        .where((w) => (w['exercises'] as List?)?.isNotEmpty == true ||
+            (w['hcSessions'] as List?)?.isNotEmpty == true)
+        .map((w) => w['dayIso'] as String? ?? '')
+        .where((s) => s.isNotEmpty)
+        .toSet();
+
+    final rankInfo = _computeRank();
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Streak week dots
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            color: NudgeTokens.card,
-            border: Border.all(color: NudgeTokens.border),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(7, (i) {
-              final iso = weekDays[i];
-              final isToday = iso == todayIso;
-              final isWorked = workedDays.contains(iso);
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(dayLetters[i],
-                      style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: NudgeTokens.textLow)),
-                  const SizedBox(height: 6),
-                  Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isWorked
-                          ? riskColor
-                          : (isToday
-                              ? riskColor.withValues(alpha: 0.1)
-                              : Colors.transparent),
-                      border: Border.all(
-                          color: isToday && !isWorked
-                              ? riskColor.withValues(alpha: 0.3)
-                              : Colors.transparent),
-                    ),
-                    child: Center(
-                      child: Icon(Icons.check_rounded,
-                          size: 14,
-                          color: isWorked ? Colors.white : Colors.transparent),
-                    ),
-                  ),
-                ],
-              );
-            }),
-          ),
-        ),
-        const SizedBox(height: 16),
-        _buildWeeklyAiHero(),
-        const SizedBox(height: 16),
-        if (muscleGroups.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  MuscleMapDuo(activeMuscles: muscleGroups, height: 160),
-                  const SizedBox(height: 20),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.center,
-                    children: muscleGroups
-                        .map((g) => Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: NudgeTokens.gymB.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                    color: NudgeTokens.gymB
-                                        .withValues(alpha: 0.3)),
-                              ),
-                              child: Text(
-                                g.toUpperCase(),
-                                style: GoogleFonts.outfit(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w900,
-                                  color: NudgeTokens.gymB,
-                                  letterSpacing: 1.2,
-                                ),
-                              ),
-                            ))
-                        .toList(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        // Weekly Progress summary
+        // 1. Weekly Progress summary — key stats first
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -1566,7 +1689,7 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
           ),
         ),
         const SizedBox(height: 16),
-        // Activity Volume bar chart
+        // 2. Activity Volume bar chart
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -1644,6 +1767,72 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
             ],
           ),
         ),
+        const SizedBox(height: 16),
+        // 3. Muscle groups worked this week
+        if (muscleGroups.isNotEmpty) ...[
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                MuscleMapDuo(activeMuscles: muscleGroups, height: 160),
+                const SizedBox(height: 20),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: muscleGroups
+                      .map((g) => Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: NudgeTokens.gymB.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: NudgeTokens.gymB.withValues(alpha: 0.3)),
+                            ),
+                            child: Text(
+                              g.toUpperCase(),
+                              style: GoogleFonts.outfit(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: NudgeTokens.gymB,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ))
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+        // 4. Monthly calendar — historical view
+        _GymMonthCalendar(
+          month: _calMonth,
+          workedDays: allWorkedDays,
+          todayIso: todayIso,
+          onPrevMonth: () => setState(() {
+            _calMonth = DateTime(_calMonth.year, _calMonth.month - 1, 1);
+          }),
+          onNextMonth: () => setState(() {
+            _calMonth = DateTime(_calMonth.year, _calMonth.month + 1, 1);
+          }),
+          onDayTap: (d) => setState(() {
+            _day = d;
+            DefaultTabController.of(context).animateTo(0);
+          }),
+          gymColor: riskColor,
+        ),
+        const SizedBox(height: 12),
+        // 5. Rank card — gamification
+        _GymRankCard(rankInfo: rankInfo, streak: streak),
+        const SizedBox(height: 16),
+        // 6. Weight & body progress
+        _buildWeightLossCard(),
+        const SizedBox(height: 16),
+        // 7. AI coach — insight at the end
+        _buildWeeklyAiHero(),
       ],
     );
   }
@@ -1670,7 +1859,7 @@ class _GymScreenState extends State<GymScreen> with WidgetsBindingObserver {
               ),
             ),
             const Spacer(),
-            _ExportButton(onTap: () => PdfExportService.exportProgress()),
+            _ExportButton(onTap: () => _showGymExportSheet()),
           ],
         ),
         
@@ -2846,6 +3035,62 @@ class _WorkoutPreview extends StatelessWidget {
           final lastTotalReps = last?['totalReps'] as int?;
           final totalRepsDiff = (lastTotalReps != null && totalReps > 0) ? totalReps - lastTotalReps : null;
 
+          // Compute progressive overload target
+          String aiTargetStr;
+          String aiStatusLabel;
+          Color aiStatusColor;
+          if (last == null) {
+            aiTargetStr = 'No history yet';
+            aiStatusLabel = 'NEW';
+            aiStatusColor = NudgeTokens.textLow;
+          } else if (isBodyweight) {
+            final prevMax = (last['maxReps'] as int?) ?? 0;
+            if (prevMax > 0) {
+              aiTargetStr = '${prevMax + 2} reps';
+              if (bestReps >= prevMax + 2) {
+                aiStatusLabel = 'HIT ✓'; aiStatusColor = NudgeTokens.green;
+              } else if (bestReps >= prevMax) {
+                aiStatusLabel = 'MATCHED'; aiStatusColor = NudgeTokens.amber;
+              } else if (bestReps > 0) {
+                aiStatusLabel = 'BELOW'; aiStatusColor = NudgeTokens.red;
+              } else {
+                aiStatusLabel = 'PENDING'; aiStatusColor = NudgeTokens.textLow;
+              }
+            } else {
+              aiTargetStr = '—'; aiStatusLabel = 'NO DATA'; aiStatusColor = NudgeTokens.textLow;
+            }
+          } else {
+            final prevBest2 = (last['bestWeight'] as num?)?.toDouble() ?? 0.0;
+            final prevMaxReps2 = (last['maxReps'] as int?) ?? 0;
+            if (prevBest2 > 0) {
+              final tgt = prevBest2 + 2.5;
+              aiTargetStr = '${tgt % 1 == 0 ? tgt.toStringAsFixed(0) : tgt.toStringAsFixed(1)}kg';
+              if (best >= prevBest2 + 2.5) {
+                aiStatusLabel = 'HIT ✓'; aiStatusColor = NudgeTokens.green;
+              } else if (best >= prevBest2) {
+                aiStatusLabel = 'MATCHED'; aiStatusColor = NudgeTokens.amber;
+              } else if (best > 0) {
+                aiStatusLabel = 'BELOW'; aiStatusColor = NudgeTokens.red;
+              } else {
+                aiStatusLabel = 'PENDING'; aiStatusColor = NudgeTokens.textLow;
+              }
+            } else if (prevMaxReps2 > 0) {
+              // Previous session was logged with weight=0 (bodyweight or unset) — use rep progression
+              aiTargetStr = '${prevMaxReps2 + 2} reps';
+              if (bestReps >= prevMaxReps2 + 2) {
+                aiStatusLabel = 'HIT ✓'; aiStatusColor = NudgeTokens.green;
+              } else if (bestReps >= prevMaxReps2) {
+                aiStatusLabel = 'MATCHED'; aiStatusColor = NudgeTokens.amber;
+              } else if (bestReps > 0) {
+                aiStatusLabel = 'BELOW'; aiStatusColor = NudgeTokens.red;
+              } else {
+                aiStatusLabel = 'PENDING'; aiStatusColor = NudgeTokens.textLow;
+              }
+            } else {
+              aiTargetStr = '—'; aiStatusLabel = 'NO DATA'; aiStatusColor = NudgeTokens.textLow;
+            }
+          }
+
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: ClipRRect(
@@ -2974,39 +3219,42 @@ class _WorkoutPreview extends StatelessWidget {
                                     ),
                                 ],
                               ),
-                              const SizedBox(height: 7),
-                              const Divider(height: 1, thickness: 1, color: Color(0x14FFFFFF)),
-                              const SizedBox(height: 6),
-                              // AI Coach stub — targets & rank (future feature)
-                              Row(
-                                children: [
-                                  Icon(Icons.auto_awesome_rounded, size: 10,
-                                      color: NudgeTokens.purple.withValues(alpha: 0.55)),
-                                  const SizedBox(width: 5),
-                                  Text('AI Target',
-                                      style: TextStyle(fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: NudgeTokens.purple.withValues(alpha: 0.55))),
-                                  const SizedBox(width: 6),
-                                  Text('—',
-                                      style: TextStyle(fontSize: 10,
-                                          color: NudgeTokens.textLow.withValues(alpha: 0.6))),
-                                  const Spacer(),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(5),
-                                      color: NudgeTokens.textLow.withValues(alpha: 0.07),
-                                      border: Border.all(color: NudgeTokens.textLow.withValues(alpha: 0.12)),
-                                    ),
-                                    child: const Text('UNRANKED',
-                                        style: TextStyle(fontSize: 9,
-                                            fontWeight: FontWeight.w800,
-                                            color: NudgeTokens.textLow,
-                                            letterSpacing: 0.5)),
-                                  ),
-                                ],
-                              ),
+                              // Progressive overload target — only show when there's actual data
+                              if (aiTargetStr != '—') ...[
+                                const SizedBox(height: 7),
+                                const Divider(height: 1, thickness: 1, color: Color(0x14FFFFFF)),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Icon(Icons.track_changes_rounded, size: 10,
+                                        color: NudgeTokens.purple.withValues(alpha: 0.55)),
+                                    const SizedBox(width: 5),
+                                    Text('Next target',
+                                        style: TextStyle(fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                            color: NudgeTokens.purple.withValues(alpha: 0.55))),
+                                    const SizedBox(width: 6),
+                                    Text(aiTargetStr,
+                                        style: const TextStyle(fontSize: 10,
+                                            color: NudgeTokens.textLow, fontWeight: FontWeight.w600)),
+                                    const Spacer(),
+                                    if (aiStatusLabel != 'NEW')
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(5),
+                                          color: aiStatusColor.withValues(alpha: 0.1),
+                                          border: Border.all(color: aiStatusColor.withValues(alpha: 0.25)),
+                                        ),
+                                        child: Text(aiStatusLabel,
+                                            style: TextStyle(fontSize: 9,
+                                                fontWeight: FontWeight.w800,
+                                                color: aiStatusColor,
+                                                letterSpacing: 0.5)),
+                                      ),
+                                  ],
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -3921,6 +4169,42 @@ class _LogbookCard extends StatelessWidget {
   }
 }
 
+class _ExportRangeButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  const _ExportRangeButton({required this.label, required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: NudgeTokens.gymB.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: NudgeTokens.gymB.withValues(alpha: 0.25)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: NudgeTokens.gymB, size: 22),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: GoogleFonts.outfit(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: NudgeTokens.gymB,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ExportButton extends StatelessWidget {
   final VoidCallback onTap;
   const _ExportButton({required this.onTap});
@@ -4081,6 +4365,425 @@ class _MuscleGroupWeeklySummary extends StatelessWidget {
           })),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Monthly Gym Calendar
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _GymMonthCalendar extends StatelessWidget {
+  final DateTime month;
+  final Set<String> workedDays;
+  final String todayIso;
+  final VoidCallback onPrevMonth;
+  final VoidCallback onNextMonth;
+  final void Function(DateTime) onDayTap;
+  final Color gymColor;
+
+  const _GymMonthCalendar({
+    required this.month,
+    required this.workedDays,
+    required this.todayIso,
+    required this.onPrevMonth,
+    required this.onNextMonth,
+    required this.onDayTap,
+    required this.gymColor,
+  });
+
+  String _isoDay(DateTime d) {
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final firstDay = DateTime(month.year, month.month, 1);
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    // weekday: 1=Mon..7=Sun, pad so Mon is col 0
+    final startOffset = firstDay.weekday - 1;
+    final workedCount = List.generate(daysInMonth, (i) {
+      final iso = _isoDay(DateTime(month.year, month.month, i + 1));
+      return workedDays.contains(iso);
+    }).where((b) => b).length;
+
+    final monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: NudgeTokens.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: NudgeTokens.border),
+      ),
+      child: Column(
+        children: [
+          // Header row
+          Row(children: [
+            IconButton(
+              onPressed: onPrevMonth,
+              icon: const Icon(Icons.chevron_left_rounded, color: NudgeTokens.textMid, size: 22),
+              padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+            ),
+            Expanded(
+              child: Center(
+                child: Text(
+                  '${monthNames[month.month - 1]} ${month.year}',
+                  style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w800, color: NudgeTokens.textHigh),
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: gymColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text('$workedCount sessions', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: gymColor)),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              onPressed: onNextMonth,
+              icon: const Icon(Icons.chevron_right_rounded, color: NudgeTokens.textMid, size: 22),
+              padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          // Day-of-week labels
+          Row(
+            children: ['M','T','W','T','F','S','S'].map((l) => Expanded(
+              child: Center(child: Text(l, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: NudgeTokens.textLow))),
+            )).toList(),
+          ),
+          const SizedBox(height: 8),
+          // Calendar grid
+          ...() {
+            final cells = <Widget>[];
+            int col = 0;
+            List<Widget> row = [];
+
+            // Leading empty cells
+            for (int i = 0; i < startOffset; i++) {
+              row.add(const Expanded(child: SizedBox()));
+              col++;
+            }
+
+            for (int day = 1; day <= daysInMonth; day++) {
+              final date = DateTime(month.year, month.month, day);
+              final iso = _isoDay(date);
+              final isWorked = workedDays.contains(iso);
+              final isToday = iso == todayIso;
+
+              row.add(Expanded(
+                child: GestureDetector(
+                  onTap: () => onDayTap(date),
+                  child: Container(
+                    margin: const EdgeInsets.all(2),
+                    height: 34,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isWorked ? gymColor : (isToday ? gymColor.withValues(alpha: 0.12) : Colors.transparent),
+                      border: isToday && !isWorked ? Border.all(color: gymColor.withValues(alpha: 0.5)) : null,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '$day',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: isWorked || isToday ? FontWeight.w800 : FontWeight.w400,
+                          color: isWorked ? Colors.white : (isToday ? gymColor : NudgeTokens.textMid),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ));
+              col++;
+
+              if (col == 7) {
+                cells.add(Row(children: row));
+                cells.add(const SizedBox(height: 4));
+                row = [];
+                col = 0;
+              }
+            }
+
+            // Trailing empty cells
+            if (col > 0) {
+              while (col < 7) {
+                row.add(const Expanded(child: SizedBox()));
+                col++;
+              }
+              cells.add(Row(children: row));
+            }
+
+            return cells;
+          }(),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rank Card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _GymRankCard extends StatelessWidget {
+  final Map<String, dynamic> rankInfo;
+  final int streak;
+
+  const _GymRankCard({required this.rankInfo, required this.streak});
+
+  @override
+  Widget build(BuildContext context) {
+    final rank = rankInfo['rank'] as String;
+    final emoji = rankInfo['emoji'] as String;
+    final color = rankInfo['color'] as Color;
+    final current = rankInfo['current'] as int;
+    final next = rankInfo['next'] as int?;
+    final progress = (rankInfo['progress'] as double).clamp(0.0, 1.0);
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [color.withValues(alpha: 0.18), color.withValues(alpha: 0.04)],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Text(emoji, style: const TextStyle(fontSize: 28)),
+            const SizedBox(width: 12),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(rank.toUpperCase(), style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w900, color: color, letterSpacing: 0.5)),
+              Text('$current total sessions', style: const TextStyle(fontSize: 12, color: NudgeTokens.textLow)),
+            ]),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: NudgeTokens.gymB.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: NudgeTokens.gymB.withValues(alpha: 0.25)),
+              ),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text('$streak', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w900, color: NudgeTokens.gymB)),
+                const Text('wk streak', style: TextStyle(fontSize: 9, color: NudgeTokens.textLow, fontWeight: FontWeight.w600)),
+              ]),
+            ),
+          ]),
+          if (next != null) ...[
+            const SizedBox(height: 14),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text('Progress to next rank', style: const TextStyle(fontSize: 11, color: NudgeTokens.textLow)),
+              Text('${next - current} sessions to go', style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w700)),
+            ]),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                backgroundColor: color.withValues(alpha: 0.12),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+                minHeight: 6,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Weight Loss Row helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _WeightLossRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? color;
+
+  const _WeightLossRow({required this.label, required this.value, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(label, style: const TextStyle(fontSize: 12, color: NudgeTokens.textLow)),
+        Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: color ?? NudgeTokens.textMid)),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Post-Workout AI Summary Sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PostWorkoutSummarySheet extends StatefulWidget {
+  final Map<String, dynamic> workout;
+  final Map<String, dynamic> lastByExercise;
+  final VoidCallback onClose;
+
+  const _PostWorkoutSummarySheet({
+    required this.workout,
+    required this.lastByExercise,
+    required this.onClose,
+  });
+
+  @override
+  State<_PostWorkoutSummarySheet> createState() => _PostWorkoutSummarySheetState();
+}
+
+class _PostWorkoutSummarySheetState extends State<_PostWorkoutSummarySheet> {
+  String? _summary;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _generate();
+  }
+
+  Future<void> _generate() async {
+    final result = await AiAnalysisService.generateWorkoutSummary(
+      workout: widget.workout,
+      lastByExercise: widget.lastByExercise,
+    );
+    if (mounted) setState(() { _summary = result; _loading = false; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final exercises = ((widget.workout['exercises'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+    final durationSec = (widget.workout['durationSeconds'] as num?)?.toInt() ?? 0;
+    final durationMin = durationSec ~/ 60;
+    int totalSets = 0;
+    int prs = 0;
+    for (final ex in exercises) {
+      final name = (ex['name'] as String?) ?? '';
+      final sets = ((ex['sets'] as List?) ?? []).map((s) => (s as Map).cast<String, dynamic>()).toList();
+      totalSets += sets.length;
+      double bestW = 0;
+      for (final s in sets) {
+        final w = (s['weight'] as num?)?.toDouble() ?? 0.0;
+        if (w > bestW) bestW = w;
+      }
+      final last = widget.lastByExercise[name] as Map?;
+      final prevBest = (last?['bestWeight'] as num?)?.toDouble() ?? 0.0;
+      if (bestW > 0 && prevBest > 0 && bestW > prevBest) prs++;
+    }
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(child: Container(width: 36, height: 4, decoration: BoxDecoration(color: NudgeTokens.border, borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 16),
+            Row(children: [
+              const Text('🏁', style: TextStyle(fontSize: 22)),
+              const SizedBox(width: 10),
+              Text('Workout Complete!', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w900, color: NudgeTokens.textHigh)),
+            ]),
+            const SizedBox(height: 16),
+            // Quick stats
+            Row(children: [
+              _SummaryChip(label: exercises.length == 1 ? '${exercises.length} exercise' : '${exercises.length} exercises', icon: Icons.fitness_center_rounded, color: NudgeTokens.gymB),
+              const SizedBox(width: 8),
+              _SummaryChip(label: '$totalSets sets', icon: Icons.repeat_rounded, color: NudgeTokens.amber),
+              if (durationMin > 0) ...[
+                const SizedBox(width: 8),
+                _SummaryChip(label: '${durationMin}min', icon: Icons.timer_rounded, color: NudgeTokens.green),
+              ],
+              if (prs > 0) ...[
+                const SizedBox(width: 8),
+                _SummaryChip(label: '$prs PR${prs > 1 ? 's' : ''}', icon: Icons.emoji_events_rounded, color: NudgeTokens.amber),
+              ],
+            ]),
+            const SizedBox(height: 16),
+            // AI summary
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: NudgeTokens.purple.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: NudgeTokens.purple.withValues(alpha: 0.2)),
+              ),
+              child: _loading
+                  ? Row(children: [
+                      const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: NudgeTokens.purple)),
+                      const SizedBox(width: 12),
+                      Text('AI Coach is writing your summary...', style: TextStyle(color: NudgeTokens.purple.withValues(alpha: 0.7), fontSize: 13)),
+                    ])
+                  : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        const Icon(Icons.auto_awesome_rounded, size: 14, color: NudgeTokens.purple),
+                        const SizedBox(width: 6),
+                        const Text('AI Coach', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: NudgeTokens.purple, letterSpacing: 0.5)),
+                      ]),
+                      const SizedBox(height: 8),
+                      Text(
+                        _summary ?? 'Great workout! Keep pushing.',
+                        style: const TextStyle(fontSize: 13, color: NudgeTokens.textMid, height: 1.5),
+                      ),
+                    ]),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: widget.onClose,
+                style: FilledButton.styleFrom(
+                  backgroundColor: NudgeTokens.gymB,
+                  foregroundColor: NudgeTokens.gymA,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('Done', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const _SummaryChip({required this.label, required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 5),
+        Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+      ]),
     );
   }
 }

@@ -13,13 +13,18 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
-  static final GoogleSignIn _google = GoogleSignIn();
+  static final GoogleSignIn _google = GoogleSignIn(
+    scopes: [
+      'https://www.googleapis.com/auth/drive.appdata',
+    ],
+  );
 
   // ── State ──────────────────────────────────────────────────────────────────
 
   static User? get currentUser => _auth.currentUser;
   static Stream<User?> get authStateChanges => _auth.authStateChanges();
   static bool get isSignedIn => _auth.currentUser != null;
+  static GoogleSignIn get google => _google;
 
   /// Short display name, falls back to email prefix, then "User".
   static String get displayName {

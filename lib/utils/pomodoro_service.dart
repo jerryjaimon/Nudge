@@ -19,9 +19,9 @@ class PomodoroService {
     }
   }
 
-  static Future<void> startBlocker(List<String> apps) async {
+  static Future<void> startBlocker(List<String> apps, {String tone = 'motivating'}) async {
     try {
-      await _channel.invokeMethod('startBlocker', {'apps': apps});
+      await _channel.invokeMethod('startBlocker', {'apps': apps, 'tone': tone});
     } catch (e) {
       print('Failed to start Pomodoro Blocker: $e');
     }

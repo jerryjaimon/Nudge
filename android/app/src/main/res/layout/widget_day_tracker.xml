@@ -7,7 +7,6 @@
     android:orientation="vertical"
     android:padding="16dp">
 
-    <!-- Header: accent bar + title -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -26,7 +25,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Year"
+            android:text="Tracker"
             android:textColor="#FFFFFF"
             android:textSize="13sp"
             android:textStyle="bold"
@@ -37,12 +36,11 @@
             android:id="@+id/tracker_stats"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="0 / 365"
+            android:text="0 / 0"
             android:textColor="#5A7582"
             android:textSize="10sp"/>
     </LinearLayout>
 
-    <!-- Dot grid fills remaining space -->
     <ImageView
         android:id="@+id/tracker_dots"
         android:layout_width="match_parent"
@@ -53,7 +51,6 @@
         android:scaleType="fitStart"
         android:contentDescription="@null"/>
 
-    <!-- Progress bar -->
     <ProgressBar
         android:id="@+id/tracker_progress"
         style="@android:style/Widget.ProgressBar.Horizontal"
@@ -63,14 +60,13 @@
         android:max="100"
         android:progress="0"/>
 
-    <!-- Stats row -->
     <TextView
         android:id="@+id/tracker_rem"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:text="365 days left · 0%"
+        android:text="Configure widget to select tracker"
         android:textColor="#B0C4CF"
-        android:textSize="11sp"/>
-
+        android:textSize="11sp"
+        android:gravity="center" />
 </LinearLayout>

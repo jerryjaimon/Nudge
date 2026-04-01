@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.TextUtils
 import androidx.core.app.ActivityCompat
@@ -24,6 +25,7 @@ class MainActivity: FlutterFragmentActivity() {
     private val FINANCE_CHANNEL = "com.example.nudge/finance"
     private val POMODORO_CHANNEL = "com.example.nudge/pomodoro"
     private val UPDATE_CHANNEL  = "com.example.nudge/update"
+    private val BACKUP_CHANNEL  = "com.example.nudge/backup"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -116,8 +118,10 @@ class MainActivity: FlutterFragmentActivity() {
                 }
                 "startBlocker" -> {
                     val apps = call.argument<List<String>>("apps")?.toTypedArray() ?: emptyArray()
+                    val tone = call.argument<String>("tone") ?: "motivating"
                     val serviceIntent = Intent(this, PomodoroBlockerService::class.java)
                     serviceIntent.putExtra("blocked_apps", apps)
+                    serviceIntent.putExtra("blocker_tone", tone)
                     
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                         startForegroundService(serviceIntent)
@@ -169,6 +173,24 @@ class MainActivity: FlutterFragmentActivity() {
                     } catch (e: Exception) {
                         result.error("INSTALL_FAILED", e.message, null)
                     }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BACKUP_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isBatteryOptimizationDisabled" -> {
+                    val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                    result.success(pm.isIgnoringBatteryOptimizations(packageName))
+                }
+                "openBatteryOptimizationSettings" -> {
+                    val intent = Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:$packageName")
+                    )
+                    startActivity(intent)
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }

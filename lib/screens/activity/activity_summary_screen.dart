@@ -12,6 +12,7 @@ import '../food/food_screen.dart';
 import '../pomodoro/pomodoro_screen.dart';
 import 'steps_detail_screen.dart';
 import 'activity_tracker_screen.dart';
+import '../health/water_history_screen.dart';
 
 class ActivitySummaryScreen extends StatefulWidget {
   final int initialPage;
@@ -205,48 +206,6 @@ class _ActivitySummaryScreenState extends State<ActivitySummaryScreen> {
     return "$m'${s.toString().padLeft(2, '0')}\"";
   }
 
-  void _showWaterEditor() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: NudgeTokens.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Hydration',
-                  style: GoogleFonts.outfit(
-                      fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _WaterBtn(label: '-250ml', onTap: () async {
-                    Navigator.pop(ctx);
-                    await HealthService.addLocalWater(-250, date: _currentDate);
-                    _fetchStats();
-                  }),
-                  _WaterBtn(label: '+250ml', highlight: true, onTap: () async {
-                    Navigator.pop(ctx);
-                    await HealthService.addLocalWater(250, date: _currentDate);
-                    _fetchStats();
-                  }),
-                  _WaterBtn(label: '+500ml', highlight: true, onTap: () async {
-                    Navigator.pop(ctx);
-                    await HealthService.addLocalWater(500, date: _currentDate);
-                    _fetchStats();
-                  }),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   List<_CardData> get _cards {
     final steps = (_healthTotals['steps'] ?? 0.0).toInt();
@@ -349,8 +308,10 @@ class _ActivitySummaryScreenState extends State<ActivitySummaryScreen> {
         tile2Icon: Icons.flag_rounded,
         tile2Value: '${_waterGoal.toInt()} ml',
         tile2Label: 'Goal',
-        actionLabel: 'Log Water',
-        onAction: _showWaterEditor,
+        actionLabel: 'Hydration History',
+        onAction: () => Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => const WaterHistoryScreen()))
+            .then((_) => _fetchStats()),
       ),
 
       // 5. Focus
@@ -827,24 +788,3 @@ class _StatTile extends StatelessWidget {
   }
 }
 
-// ── Water button helper ───────────────────────────────────────────────────────
-
-class _WaterBtn extends StatelessWidget {
-  final String label;
-  final bool highlight;
-  final VoidCallback onTap;
-
-  const _WaterBtn({required this.label, required this.onTap, this.highlight = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: highlight ? NudgeTokens.blue : NudgeTokens.surface,
-        foregroundColor: highlight ? Colors.black : Colors.white,
-      ),
-      onPressed: onTap,
-      child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-    );
-  }
-}

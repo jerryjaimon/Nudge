@@ -12,7 +12,9 @@ class ExerciseDB {
     ],
     'Back': [
       'Deadlift', 'Romanian Deadlift', 'Sumo Deadlift', 'Stiff-Leg Deadlift',
-      'Trap Bar Deadlift', 'Deficit Deadlift', 'Barbell Row', 'Pendlay Row',
+      'Trap Bar Deadlift', 'Deficit Deadlift',
+      'Bent Over Row', 'Barbell Bent Over Row', 'Dumbbell Bent Over Row',
+      'Barbell Row', 'Pendlay Row',
       'Dumbbell Row', 'Seal Row', 'Chest-Supported Row', 'Chest-Supported T-Bar Row',
       'Seated Cable Row', 'Cable Row (Wide Grip)', 'Single-Arm Cable Row',
       'Lat Pulldown', 'Lat Pulldown (Close Grip)', 'Lat Pulldown (Wide Grip)',

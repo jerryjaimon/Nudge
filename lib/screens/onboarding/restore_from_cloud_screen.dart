@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart' show NudgeTokens;
 import '../../services/firebase_backup_service.dart';
+import '../../services/google_drive_backup_service.dart';
 import '../../storage.dart';
 import '../../widgets/orbit_animation.dart';
 
@@ -22,8 +23,28 @@ class RestoreFromCloudScreen extends StatefulWidget {
 
 class _RestoreFromCloudScreenState extends State<RestoreFromCloudScreen> {
   final _passphraseCtrl = TextEditingController();
+  bool _checking = true;
+  bool _hasFirebaseBackup = false;
+  bool _hasDriveBackup = false;
   bool _busy = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    final fb = await FirebaseBackupService.checkBackupExists();
+    final gd = await GoogleDriveBackupService.checkBackupExists();
+    if (!mounted) return;
+    setState(() {
+      _checking = false;
+      _hasFirebaseBackup = fb;
+      _hasDriveBackup = gd;
+    });
+  }
 
   @override
   void dispose() {
@@ -31,7 +52,7 @@ class _RestoreFromCloudScreenState extends State<RestoreFromCloudScreen> {
     super.dispose();
   }
 
-  Future<void> _restore() async {
+  Future<void> _restore(bool useDrive) async {
     final pass = _passphraseCtrl.text.trim();
     if (pass.isEmpty) {
       setState(() => _error = 'Enter your passphrase to decrypt your backup.');
@@ -44,7 +65,11 @@ class _RestoreFromCloudScreenState extends State<RestoreFromCloudScreen> {
     });
 
     try {
-      await FirebaseBackupService.restore(pass);
+      if (useDrive) {
+        await GoogleDriveBackupService.restore(pass);
+      } else {
+        await FirebaseBackupService.restore(pass);
+      }
       // Ensure any missing keys are restored after a full box clear.
       await AppStorage.init();
       if (!mounted) return;
@@ -60,13 +85,24 @@ class _RestoreFromCloudScreenState extends State<RestoreFromCloudScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_checking) {
+      return const Scaffold(
+        backgroundColor: NudgeTokens.bg,
+        body: Center(child: CircularProgressIndicator(color: NudgeTokens.purple)),
+      );
+    }
+    
     return Scaffold(
       backgroundColor: NudgeTokens.bg,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 16, 28, 24),
-          child: Column(
-            children: [
+        child: CustomScrollView(
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(28, 16, 28, 24),
+                child: Column(
+                  children: [
               const SizedBox(height: 18),
               const OrbitAnimation(size: 250),
               const SizedBox(height: 26),
@@ -127,31 +163,70 @@ class _RestoreFromCloudScreenState extends State<RestoreFromCloudScreen> {
                   ),
                 ),
               const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: _busy
-                    ? const Center(
-                        child: CircularProgressIndicator(color: NudgeTokens.purple),
-                      )
-                    : FilledButton(
-                        onPressed: _restore,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: NudgeTokens.purple,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+              if (_hasDriveBackup)
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: _busy
+                      ? const Center(child: CircularProgressIndicator(color: NudgeTokens.blue))
+                      : FilledButton.icon(
+                          onPressed: () => _restore(true),
+                          icon: const Icon(Icons.add_to_drive_rounded, size: 18),
+                          label: Text(
+                            'Restore from Google Drive',
+                            style: GoogleFonts.outfit(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: NudgeTokens.blue,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           ),
                         ),
-                        child: Text(
-                          'Restore backup',
-                          style: GoogleFonts.outfit(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
+                ),
+              if (_hasDriveBackup && _hasFirebaseBackup)
+                const SizedBox(height: 12),
+              if (_hasFirebaseBackup)
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: _busy
+                      ? const Center(child: CircularProgressIndicator(color: NudgeTokens.purple))
+                      : FilledButton.icon(
+                          onPressed: () => _restore(false),
+                          icon: const Icon(Icons.cloud_download_rounded, size: 18),
+                          label: Text(
+                            'Restore from Firebase',
+                            style: GoogleFonts.outfit(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: NudgeTokens.purple,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           ),
                         ),
-                      ),
-              ),
+                ),
+              if (!_hasDriveBackup && !_hasFirebaseBackup) 
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: FilledButton(
+                    onPressed: null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: NudgeTokens.elevated,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    child: Text(
+                      'No backup found',
+                      style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white30),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 14),
               TextButton(
                 onPressed: _busy ? null : widget.onSkip,
@@ -166,6 +241,9 @@ class _RestoreFromCloudScreenState extends State<RestoreFromCloudScreen> {
               ),
             ],
           ),
+        ),
+            ),
+          ],
         ),
       ),
     );

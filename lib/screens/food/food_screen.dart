@@ -202,7 +202,7 @@ class _FoodScreenState extends State<FoodScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const AddFoodSheet(),
+      builder: (_) => AddFoodSheet(date: _currentDate),
     ).then((_) => _refresh());
   }
 
@@ -211,7 +211,7 @@ class _FoodScreenState extends State<FoodScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => AddFoodSheet(initialMeal: meal),
+      builder: (_) => AddFoodSheet(initialMeal: meal, date: _currentDate),
     ).then((_) => _refresh());
   }
 
@@ -221,7 +221,7 @@ class _FoodScreenState extends State<FoodScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => AddFoodSheet(initialMeal: meal, initialDescription: description),
+      builder: (_) => AddFoodSheet(initialMeal: meal, initialDescription: description, date: _currentDate),
     ).then((_) => _refresh());
   }
 

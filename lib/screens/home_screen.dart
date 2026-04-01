@@ -8,7 +8,6 @@ import '../utils/health_service.dart';
 import '../utils/usage_service.dart';
 import 'movies/movies_screen.dart';
 import 'books/books_screen.dart';
-import 'protected/protected_gate.dart';
 import 'habits/my_habits_screen.dart';
 import 'trackers/day_tracker_screen.dart';
 import 'pomodoro/pomodoro_screen.dart';
@@ -20,11 +19,10 @@ import 'health/running_coach_list_screen.dart';
 import '../widgets/weekly_progress_card.dart';
 import '../services/running_coach_service.dart';
 import 'food/food_screen.dart';
-import 'usage/usage_screen.dart';
 import 'package:usage_stats/usage_stats.dart';
 import '../widgets/water_tracker_card.dart';
 import '../widgets/daily_progress_rings.dart';
-import 'detox/detox_screen.dart';
+import 'digital_wellbeing/digital_wellbeing_screen.dart';
 import '../services/health_center_service.dart';
 import 'health/health_center_screen.dart';
 import '../utils/streak_service.dart';
@@ -41,6 +39,16 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _tabIndex = 0;
+  int _activityRefreshKey = 0;
+
+  void _onTabTap(int i) {
+    setState(() {
+      // Bump the key each time the Activity tab is tapped so the screen
+      // rebuilds and re-fetches fresh data.
+      if (i == 1) _activityRefreshKey++;
+      _tabIndex = i;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,16 +58,16 @@ class _HomeScreenState extends State<HomeScreen> {
       extendBody: true,
       body: IndexedStack(
         index: _tabIndex,
-        children: const [
-          _HomeTab(),
-          ActivitySummaryScreen(),
-          _ProgressTab(),
-          SettingsScreen(),
+        children: [
+          const _HomeTab(),
+          ActivitySummaryScreen(key: ValueKey(_activityRefreshKey)),
+          const _ProgressTab(),
+          const SettingsScreen(),
         ],
       ),
       bottomNavigationBar: _NudgeNavBar(
         currentIndex: _tabIndex,
-        onTap: (i) => setState(() => _tabIndex = i),
+        onTap: _onTabTap,
       ),
     );
   }
@@ -386,19 +394,6 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
             .then((_) => _fetchStats()),
       ));
     }
-    if (AppStorage.enabledModules.contains('habits')) {
-      prodCards.add(_ModuleCard(
-        title: 'Habits',
-        status: _loading ? '…' : 'Streak: ${_stats['habitStreak'] ?? 0}',
-        icon: Icons.lock_rounded,
-        accentA: NudgeTokens.protA,
-        accentB: NudgeTokens.protB,
-        onTap: () => Navigator.of(context)
-            .push(
-                MaterialPageRoute(builder: (_) => const ProtectedGateScreen()))
-            .then((_) => _fetchStats()),
-      ));
-    }
     prodCards.add(_ModuleCard(
       title: 'Day Trackers',
       status: 'Year progress',
@@ -461,13 +456,13 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
     }
     if (AppStorage.enabledModules.contains('detox')) {
       finCards.add(_ModuleCard(
-        title: 'Detox',
-        status: 'Schedules',
-        icon: Icons.timer_off_rounded,
-        accentA: NudgeTokens.pomA.withValues(alpha: 0.15),
-        accentB: NudgeTokens.pomB,
+        title: 'Digital Wellbeing',
+        status: 'Screen Time & Detox',
+        icon: Icons.phone_android_rounded,
+        accentA: NudgeTokens.blue.withValues(alpha: 0.15),
+        accentB: NudgeTokens.purple,
         onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const DetoxScreen()))
+            .push(MaterialPageRoute(builder: (_) => const DigitalWellbeingScreen()))
             .then((_) => _fetchStats()),
       ));
     }
@@ -1003,7 +998,7 @@ class _ScreenTimeCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () => Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => const UsageScreen())),
+          .push(MaterialPageRoute(builder: (_) => const DigitalWellbeingScreen())),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(

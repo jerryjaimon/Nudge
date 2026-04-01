@@ -17,7 +17,7 @@ Future<void> main() async {
   await DetoxService.instance.init();
   await Firebase.initializeApp();
   await Workmanager().initialize(callbackDispatcher);
-  AutoBackupService.rescheduleIfEnabled();
+  await AutoBackupService.rescheduleIfEnabled();
   runApp(const NudgeApp());
   WidgetService.updateAll();
 }

@@ -46,10 +46,20 @@ class _WeeklyProgressCardState extends State<WeeklyProgressCard> {
   List<int> _gymSetsPerDay = List.filled(7, 0);
   int _totalGymSets = 0;
 
+  late final PageController _pageCtrl;
+  int _pageIndex = 0;
+
   @override
   void initState() {
     super.initState();
+    _pageCtrl = PageController();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _pageCtrl.dispose();
+    super.dispose();
   }
 
   List<DateTime> get _days {
@@ -272,425 +282,6 @@ class _WeeklyProgressCardState extends State<WeeklyProgressCard> {
     );
   }
 
-  // ── Full-screen rich section cards ──────────────────────────────────────
-  Widget _sectionCard({
-    required IconData icon,
-    required Color color,
-    required String title,
-    required String summary,
-    required Widget body,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: NudgeTokens.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.18)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, size: 16, color: color),
-                ),
-                const SizedBox(width: 10),
-                Text(title, style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
-                const Spacer(),
-                Text(summary, style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700, color: color.withValues(alpha: 0.7))),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-            child: body,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFullScreenContent() {
-    final days = _days;
-    const dayLetters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-    final todayIso = _iso(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day));
-
-    // ── Summary strip ──────────────────────────────────────────────────────
-    final habitPct = _totalHabits > 0
-        ? (_habitRates.fold(0.0, (a, b) => a + b) / 7 * 100).round()
-        : 0;
-    final focusHours = (_totalFocusMins / 60);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Summary strip
-        Row(
-          children: [
-            _SummaryPill(value: '$_gymSessions', label: 'Sessions', color: NudgeTokens.gymB),
-            const SizedBox(width: 10),
-            _SummaryPill(value: '$_totalGymSets', label: 'Sets', color: NudgeTokens.amber),
-            const SizedBox(width: 10),
-            _SummaryPill(value: '${focusHours.toStringAsFixed(1)}h', label: 'Focus', color: NudgeTokens.pomB),
-            const SizedBox(width: 10),
-            _SummaryPill(value: '$habitPct%', label: 'Habits', color: NudgeTokens.purple),
-          ],
-        ),
-        const SizedBox(height: 18),
-
-        // ── Habits ──────────────────────────────────────────────────────
-        if (_totalHabits > 0)
-          _sectionCard(
-            icon: Icons.checklist_rounded,
-            color: NudgeTokens.purple,
-            title: 'Habits',
-            summary: '$_habitDaysCompleted / 7 full days',
-            body: Column(
-              children: [
-                Row(
-                  children: List.generate(7, (i) {
-                    final r = _habitRates[i];
-                    final iso = _iso(days[i]);
-                    final isToday = iso == todayIso;
-                    Color col;
-                    if (r >= 1.0) col = NudgeTokens.green;
-                    else if (r >= 0.5) col = NudgeTokens.amber;
-                    else if (r > 0) col = NudgeTokens.blue;
-                    else col = NudgeTokens.elevated;
-                    return Expanded(
-                      child: Column(
-                        children: [
-                          Text(dayLetters[days[i].weekday - 1],
-                              style: GoogleFonts.outfit(fontSize: 10, fontWeight: isToday ? FontWeight.w900 : FontWeight.w500,
-                                  color: isToday ? NudgeTokens.purple : NudgeTokens.textLow)),
-                          const SizedBox(height: 6),
-                          Container(
-                            height: 44,
-                            margin: const EdgeInsets.symmetric(horizontal: 2),
-                            decoration: BoxDecoration(
-                              color: r > 0 ? col.withValues(alpha: 0.18) : NudgeTokens.elevated,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: r > 0 ? col.withValues(alpha: 0.4) : Colors.transparent),
-                            ),
-                            child: Center(
-                              child: r >= 1.0
-                                  ? Icon(Icons.check_rounded, size: 16, color: col)
-                                  : r > 0
-                                      ? Text('${(r * 100).round()}%',
-                                          style: GoogleFonts.outfit(fontSize: 9, fontWeight: FontWeight.w800, color: col))
-                                      : const Icon(Icons.remove_rounded, size: 12, color: NudgeTokens.textLow),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    _StatChip('Total habits', '$_totalHabits', NudgeTokens.purple),
-                    _StatChip('Best streak', '${_habitRates.where((r) => r >= 1.0).length}d', NudgeTokens.green),
-                    _StatChip('Avg rate', '${(_habitRates.fold(0.0, (a, b) => a + b) / 7 * 100).round()}%', NudgeTokens.amber),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-        // ── Nutrition ────────────────────────────────────────────────────
-        _sectionCard(
-          icon: Icons.restaurant_rounded,
-          color: NudgeTokens.foodB,
-          title: 'Nutrition',
-          summary: _calTotals.any((c) => c > 0)
-              ? '${(_calRates.where((r) => r >= 0.8).length)}/7 on target'
-              : 'no data',
-          body: Column(
-            children: [
-              SizedBox(
-                height: 80,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: List.generate(7, (i) {
-                    final cal = i < _calTotals.length ? _calTotals[i] : 0.0;
-                    final rate = i < _calRates.length ? _calRates[i] : 0.0;
-                    final barH = rate > 0 ? (rate * 60).clamp(4.0, 60.0) : 3.0;
-                    final iso = _iso(days[i]);
-                    final isToday = iso == todayIso;
-                    Color col;
-                    if (rate >= 0.9) col = NudgeTokens.green;
-                    else if (rate >= 0.6) col = NudgeTokens.amber;
-                    else if (rate > 0) col = NudgeTokens.foodB;
-                    else col = NudgeTokens.elevated;
-                    return Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            if (cal > 0)
-                              Text(
-                                cal >= 1000 ? '${(cal / 1000).toStringAsFixed(1)}k' : '${cal.toInt()}',
-                                style: GoogleFonts.outfit(fontSize: 8, fontWeight: FontWeight.w700, color: col),
-                              ),
-                            const SizedBox(height: 2),
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 400),
-                              height: barH,
-                              decoration: BoxDecoration(
-                                color: col,
-                                borderRadius: BorderRadius.circular(4),
-                                border: isToday ? Border.all(color: NudgeTokens.foodB, width: 1.5) : null,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(dayLetters[days[i].weekday - 1],
-                                style: GoogleFonts.outfit(fontSize: 9, fontWeight: isToday ? FontWeight.w900 : FontWeight.w500,
-                                    color: isToday ? NudgeTokens.foodB : NudgeTokens.textLow)),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              ),
-              if (_calTarget > 0) ...[
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    _StatChip('Target', '${_calTarget.toInt()} kcal', NudgeTokens.foodB),
-                    _StatChip('Weekly avg', '${(_calTotals.fold(0.0, (a, b) => a + b) / 7).toInt()} kcal', NudgeTokens.amber),
-                    _StatChip('On target', '${(_calRates.where((r) => r >= 0.8).length)}/7 days', NudgeTokens.green),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-
-        // ── Training ─────────────────────────────────────────────────────
-        _sectionCard(
-          icon: Icons.fitness_center_rounded,
-          color: NudgeTokens.gymB,
-          title: 'Training',
-          summary: '$_gymSessions session${_gymSessions != 1 ? 's' : ''}  ·  $_totalGymSets sets',
-          body: Column(
-            children: [
-              Row(
-                children: List.generate(7, (i) {
-                  final done = i < _gymDays.length ? _gymDays[i] : false;
-                  final sets = i < _gymSetsPerDay.length ? _gymSetsPerDay[i] : 0;
-                  final iso = _iso(days[i]);
-                  final isToday = iso == todayIso;
-                  return Expanded(
-                    child: Column(
-                      children: [
-                        Text(dayLetters[days[i].weekday - 1],
-                            style: GoogleFonts.outfit(fontSize: 10, fontWeight: isToday ? FontWeight.w900 : FontWeight.w500,
-                                color: isToday ? NudgeTokens.gymB : NudgeTokens.textLow)),
-                        const SizedBox(height: 6),
-                        Container(
-                          height: 52,
-                          margin: const EdgeInsets.symmetric(horizontal: 2),
-                          decoration: BoxDecoration(
-                            color: done ? NudgeTokens.gymB.withValues(alpha: 0.15) : NudgeTokens.elevated,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: done ? NudgeTokens.gymB.withValues(alpha: 0.4) : Colors.transparent,
-                            ),
-                          ),
-                          child: Center(
-                            child: done
-                                ? Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.fitness_center_rounded, size: 13, color: NudgeTokens.gymB),
-                                      if (sets > 0) ...[
-                                        const SizedBox(height: 2),
-                                        Text('$sets', style: GoogleFonts.outfit(fontSize: 9, fontWeight: FontWeight.w800, color: NudgeTokens.gymB)),
-                                        Text('sets', style: const TextStyle(fontSize: 7, color: NudgeTokens.textLow)),
-                                      ],
-                                    ],
-                                  )
-                                : const Icon(Icons.remove_rounded, size: 12, color: NudgeTokens.textLow),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  _StatChip('Sessions', '$_gymSessions', NudgeTokens.gymB),
-                  _StatChip('Total sets', '$_totalGymSets', NudgeTokens.amber),
-                  _StatChip('Rest days', '${7 - _gymSessions}', NudgeTokens.textMid),
-                ],
-              ),
-            ],
-          ),
-        ),
-
-        // ── Focus ────────────────────────────────────────────────────────
-        _sectionCard(
-          icon: Icons.timer_rounded,
-          color: NudgeTokens.pomB,
-          title: 'Focus',
-          summary: '${(_totalFocusMins / 60).toStringAsFixed(1)}h this week',
-          body: Column(
-            children: [
-              SizedBox(
-                height: 80,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: List.generate(7, (i) {
-                    final m = i < _focusMins.length ? _focusMins[i] : 0.0;
-                    final maxM = _focusMins.reduce((a, b) => a > b ? a : b);
-                    final barH = maxM > 0 ? ((m / maxM) * 60).clamp(3.0, 60.0) : 3.0;
-                    final iso = _iso(days[i]);
-                    final isToday = iso == todayIso;
-                    final col = m >= 60 ? NudgeTokens.green : m >= 25 ? NudgeTokens.pomB : m > 0 ? NudgeTokens.pomB.withValues(alpha: 0.5) : NudgeTokens.elevated;
-                    return Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            if (m > 0)
-                              Text(
-                                m >= 60 ? '${(m / 60).toStringAsFixed(1)}h' : '${m.toInt()}m',
-                                style: GoogleFonts.outfit(fontSize: 8, fontWeight: FontWeight.w700, color: col),
-                              ),
-                            const SizedBox(height: 2),
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 400),
-                              height: barH,
-                              decoration: BoxDecoration(
-                                color: col,
-                                borderRadius: BorderRadius.circular(4),
-                                border: isToday ? Border.all(color: NudgeTokens.pomB, width: 1.5) : null,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(dayLetters[days[i].weekday - 1],
-                                style: GoogleFonts.outfit(fontSize: 9, fontWeight: isToday ? FontWeight.w900 : FontWeight.w500,
-                                    color: isToday ? NudgeTokens.pomB : NudgeTokens.textLow)),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  _StatChip('Total', '${(_totalFocusMins / 60).toStringAsFixed(1)}h', NudgeTokens.pomB),
-                  _StatChip('Best day', () {
-                    final maxM = _focusMins.reduce((a, b) => a > b ? a : b);
-                    if (maxM == 0) return '—';
-                    return maxM >= 60 ? '${(maxM / 60).toStringAsFixed(1)}h' : '${maxM.toInt()}m';
-                  }(), NudgeTokens.green),
-                  _StatChip('Active days', '${_focusMins.where((m) => m > 0).length}', NudgeTokens.amber),
-                ],
-              ),
-            ],
-          ),
-        ),
-
-        // ── Finance ──────────────────────────────────────────────────────
-        _sectionCard(
-          icon: Icons.account_balance_wallet_rounded,
-          color: NudgeTokens.finB,
-          title: 'Finance',
-          summary: _monthLabel,
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (_financeBudget > 0) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '£${_financeSpent.toStringAsFixed(0)}',
-                          style: GoogleFonts.outfit(
-                            fontSize: 36,
-                            fontWeight: FontWeight.w900,
-                            color: _financeSpent > _financeBudget ? NudgeTokens.red : NudgeTokens.finB,
-                            height: 1.0,
-                          ),
-                        ),
-                        Text('spent of £${_financeBudget.toStringAsFixed(0)} budget',
-                            style: GoogleFonts.outfit(fontSize: 12, color: NudgeTokens.textMid)),
-                      ],
-                    ),
-                    _BudgetRing(_financeSpent, _financeBudget),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: LinearProgressIndicator(
-                    value: (_financeSpent / _financeBudget).clamp(0.0, 1.0),
-                    backgroundColor: NudgeTokens.elevated,
-                    valueColor: AlwaysStoppedAnimation(
-                      _financeSpent > _financeBudget ? NudgeTokens.red : _financeSpent / _financeBudget > 0.8 ? NudgeTokens.amber : NudgeTokens.finB,
-                    ),
-                    minHeight: 10,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('${((_financeSpent / _financeBudget) * 100).clamp(0, 150).round()}% used',
-                        style: GoogleFonts.outfit(fontSize: 11, color: NudgeTokens.textLow)),
-                    Text(
-                      _financeSpent > _financeBudget
-                          ? '£${(_financeSpent - _financeBudget).toStringAsFixed(0)} over budget'
-                          : '£${(_financeBudget - _financeSpent).toStringAsFixed(0)} remaining',
-                      style: GoogleFonts.outfit(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: _financeSpent > _financeBudget ? NudgeTokens.red : NudgeTokens.green,
-                      ),
-                    ),
-                  ],
-                ),
-              ] else ...[
-                Text('£${_financeSpent.toStringAsFixed(0)} spent',
-                    style: GoogleFonts.outfit(fontSize: 32, fontWeight: FontWeight.w900, color: NudgeTokens.finB, height: 1.0)),
-                const SizedBox(height: 4),
-                Text('No budget set — add one in Finance',
-                    style: GoogleFonts.outfit(fontSize: 12, color: NudgeTokens.textLow)),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (widget.fullScreen) {
@@ -752,9 +343,30 @@ class _WeeklyProgressCardState extends State<WeeklyProgressCard> {
             const Expanded(child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
           else
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
-                children: [_buildFullScreenContent()],
+              child: Stack(
+                children: [
+                  PageView.builder(
+                    controller: _pageCtrl,
+                    scrollDirection: Axis.vertical,
+                    itemCount: _fullScreenPages.length,
+                    onPageChanged: (i) => setState(() => _pageIndex = i),
+                    itemBuilder: (_, i) => _fullScreenPages[i],
+                  ),
+                  Positioned(
+                    right: 14,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: List.generate(
+                          _fullScreenPages.length,
+                          (i) => _PageDot(active: i == _pageIndex, color: _fullScreenPageColors[i]),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
         ],
@@ -841,6 +453,203 @@ class _WeeklyProgressCardState extends State<WeeklyProgressCard> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  List<Widget> get _fullScreenPages {
+    final pages = <Widget>[];
+    if (_totalHabits > 0) {
+      pages.add(_buildWeeklyPageCard(
+        color: NudgeTokens.purple,
+        icon: Icons.checklist_rounded,
+        label: 'HABITS',
+        bigNumber: '$_habitDaysCompleted',
+        unit: '/ 7',
+        subtitle: 'days with all habits completed',
+        visualization: _HabitDayDots(rates: _habitRates),
+        chips: [
+          _StatChip('Total habits', '$_totalHabits', NudgeTokens.purple),
+          _StatChip('Completion', '${(_habitRates.fold(0.0, (a, b) => a + b) / 7 * 100).round()}%', NudgeTokens.amber),
+          _StatChip('Perfect days', '${_habitRates.where((r) => r >= 1.0).length}', NudgeTokens.green),
+        ],
+      ));
+    }
+    final weeklyCalAvg = (_calTotals.fold(0.0, (a, b) => a + b) / 7).toInt();
+    final onTarget = _calRates.where((r) => r >= 0.8).length;
+    pages.add(_buildWeeklyPageCard(
+      color: NudgeTokens.foodB,
+      icon: Icons.restaurant_rounded,
+      label: 'NUTRITION',
+      bigNumber: _calTotals.any((c) => c > 0) ? '$weeklyCalAvg' : '—',
+      unit: 'kcal',
+      subtitle: 'daily average this week',
+      visualization: _CalorieDayBars(rates: _calRates),
+      chips: [
+        _StatChip('Target', '${_calTarget.toInt()} kcal', NudgeTokens.foodB),
+        _StatChip('On target', '$onTarget / 7 days', NudgeTokens.green),
+        _StatChip('Weekly total', '${_calTotals.fold(0.0, (a, b) => a + b).toInt()} kcal', NudgeTokens.amber),
+      ],
+    ));
+    final avgSets = _gymSessions > 0 ? (_totalGymSets / _gymSessions).round() : 0;
+    pages.add(_buildWeeklyPageCard(
+      color: NudgeTokens.gymB,
+      icon: Icons.fitness_center_rounded,
+      label: 'TRAINING',
+      bigNumber: '$_gymSessions',
+      unit: 'sessions',
+      subtitle: 'gym sessions this week',
+      visualization: _GymDayDots(gymDays: _gymDays),
+      chips: [
+        _StatChip('Total sets', '$_totalGymSets', NudgeTokens.gymB),
+        _StatChip('Avg sets/session', '$avgSets', NudgeTokens.amber),
+        _StatChip('Rest days', '${7 - _gymSessions}', NudgeTokens.textMid),
+      ],
+    ));
+    final focusHours = _totalFocusMins / 60;
+    final bestFocusDay = _focusMins.fold(0.0, (a, b) => a > b ? a : b);
+    final activeFocusDays = _focusMins.where((m) => m > 0).length;
+    pages.add(_buildWeeklyPageCard(
+      color: NudgeTokens.pomB,
+      icon: Icons.timer_rounded,
+      label: 'FOCUS',
+      bigNumber: focusHours.toStringAsFixed(1),
+      unit: 'hours',
+      subtitle: 'deep work this week',
+      visualization: _FocusDayBars(mins: _focusMins),
+      chips: [
+        _StatChip('Best day', bestFocusDay >= 60 ? '${(bestFocusDay / 60).toStringAsFixed(1)}h' : '${bestFocusDay.toInt()}m', NudgeTokens.pomB),
+        _StatChip('Active days', '$activeFocusDays / 7', NudgeTokens.amber),
+        _StatChip('Daily avg', '${(_totalFocusMins / 7).toInt()}m', NudgeTokens.green),
+      ],
+    ));
+    pages.add(_buildWeeklyPageCard(
+      color: NudgeTokens.finB,
+      icon: Icons.account_balance_wallet_rounded,
+      label: 'FINANCE',
+      bigNumber: '£${_financeSpent.toStringAsFixed(0)}',
+      unit: '',
+      subtitle: 'spent in $_monthLabel',
+      visualization: _FinanceBar(spent: _financeSpent, budget: _financeBudget),
+      chips: _financeBudget > 0
+          ? [
+              _StatChip('Budget', '£${_financeBudget.toStringAsFixed(0)}', NudgeTokens.finB),
+              _StatChip(
+                  'Remaining',
+                  '£${(_financeBudget - _financeSpent).abs().toStringAsFixed(0)}',
+                  _financeSpent > _financeBudget ? NudgeTokens.red : NudgeTokens.green),
+              _StatChip(
+                  _financeSpent > _financeBudget ? 'Over budget' : 'Used',
+                  '${((_financeSpent / _financeBudget) * 100).clamp(0, 200).round()}%',
+                  _financeSpent > _financeBudget ? NudgeTokens.red : NudgeTokens.amber),
+            ]
+          : [_StatChip('No budget set', 'Add in Finance →', NudgeTokens.textLow)],
+    ));
+    return pages;
+  }
+
+  List<Color> get _fullScreenPageColors {
+    final colors = <Color>[];
+    if (_totalHabits > 0) colors.add(NudgeTokens.purple);
+    colors.add(NudgeTokens.foodB);
+    colors.add(NudgeTokens.gymB);
+    colors.add(NudgeTokens.pomB);
+    colors.add(NudgeTokens.finB);
+    return colors;
+  }
+
+  Widget _buildWeeklyPageCard({
+    required Color color,
+    required IconData icon,
+    required String label,
+    required String bigNumber,
+    required String unit,
+    required String subtitle,
+    required Widget visualization,
+    required List<Widget> chips,
+  }) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [color.withValues(alpha: 0.18), NudgeTokens.bg],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 44, bottomInset + 80),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Icon(icon, color: color, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  label,
+                  style: GoogleFonts.outfit(
+                    color: color,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    letterSpacing: 1.8,
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            Center(
+              child: Column(
+                children: [
+                  RichText(
+                    textAlign: TextAlign.center,
+                    text: TextSpan(
+                      children: [
+                        TextSpan(
+                          text: bigNumber,
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 72,
+                            height: 1.0,
+                          ),
+                        ),
+                        if (unit.isNotEmpty)
+                          TextSpan(
+                            text: ' $unit',
+                            style: GoogleFonts.outfit(
+                              color: NudgeTokens.textMid,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 22,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(color: NudgeTokens.textMid, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+            const Spacer(),
+            visualization,
+            const SizedBox(height: 10),
+            _DayLabelRow(days: _days),
+            const SizedBox(height: 20),
+            Wrap(spacing: 8, runSpacing: 8, children: chips),
+          ],
+        ),
       ),
     );
   }
@@ -1215,52 +1024,6 @@ class _FinanceBar extends StatelessWidget {
   }
 }
 
-// ── _SummaryPill ──────────────────────────────────────────────────────────────
-class _SummaryPill extends StatelessWidget {
-  final String value;
-  final String label;
-  final Color color;
-  const _SummaryPill({required this.value, required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.25), width: 1),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              value,
-              style: GoogleFonts.outfit(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                color: color,
-                height: 1.1,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: GoogleFonts.outfit(
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-                color: NudgeTokens.textLow,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ── _StatChip ─────────────────────────────────────────────────────────────────
 class _StatChip extends StatelessWidget {
   final String label;
@@ -1297,6 +1060,28 @@ class _StatChip extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── _PageDot ──────────────────────────────────────────────────────────────────
+class _PageDot extends StatelessWidget {
+  final bool active;
+  final Color color;
+  const _PageDot({required this.active, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      width: active ? 6 : 4,
+      height: active ? 18 : 6,
+      decoration: BoxDecoration(
+        color: active ? color : NudgeTokens.textLow.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(99),
       ),
     );
   }

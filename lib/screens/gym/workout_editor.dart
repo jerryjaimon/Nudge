@@ -70,13 +70,15 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
     });
   }
 
-  /// Ensure every set map has a 'done' bool field.
+  /// Ensure every set map has a 'done' bool field and a stable '_sid' for keys.
   List<Map<String, dynamic>> _hydrateSets(dynamic raw) {
+    int seed = DateTime.now().microsecondsSinceEpoch;
     return ((raw as List?) ?? []).map((e) {
       final ex = Map<String, dynamic>.from(e as Map);
       ex['sets'] = ((ex['sets'] as List?) ?? []).map((s) {
         final sm = Map<String, dynamic>.from(s as Map);
         sm.putIfAbsent('done', () => false);
+        sm.putIfAbsent('_sid', () => '${seed++}');
         return sm;
       }).toList();
       return ex;
@@ -312,7 +314,7 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
     final lastR = sets.isNotEmpty
         ? ((sets.last as Map)['reps'] as int?) ?? 8
         : 8;
-    sets.add({'reps': lastR, 'weight': lastW, 'done': false});
+    sets.add({'reps': lastR, 'weight': lastW, 'done': false, '_sid': '${DateTime.now().microsecondsSinceEpoch}'});
     final ex = Map<String, dynamic>.from(_exercises[exIdx]);
     ex['sets'] = sets;
     setState(() => _exercises[exIdx] = ex);
@@ -342,7 +344,7 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
       _exercises.add({
         'name': picked,
         'sets': [
-          {'reps': 8, 'weight': 0.0, 'done': false}
+          {'reps': 8, 'weight': 0.0, 'done': false, '_sid': '${DateTime.now().microsecondsSinceEpoch}'}
         ],
       });
     });
@@ -998,13 +1000,11 @@ class _ExerciseCardState extends State<_ExerciseCard> {
         ));
       }
     } else if (curr < prev) {
-      // Dispose and remove controllers for removed sets
-      for (int i = curr; i < prev; i++) {
-        _repsCtrl[i].dispose();
-        _weightCtrl[i].dispose();
-      }
-      _repsCtrl.removeRange(curr, prev);
-      _weightCtrl.removeRange(curr, prev);
+      // A set was removed (possibly not the last one) — rebuild all controllers
+      // from current widget data so indices stay aligned. Any in-progress text
+      // is intentionally discarded because the deletion already committed the
+      // underlying data model via _updateSetValue.
+      _buildControllers();
     }
   }
 
@@ -1051,6 +1051,23 @@ class _ExerciseCardState extends State<_ExerciseCard> {
 
   @override
   Widget build(BuildContext context) {
+    // Compute progressive overload target from previous session
+    double prevBestW = 0;
+    int prevMaxR = 0;
+    for (final ps in widget.prevSets) {
+      final w = (ps['weight'] as num?)?.toDouble() ?? 0.0;
+      final r = (ps['reps'] as int?) ?? 0;
+      if (w > prevBestW) prevBestW = w;
+      if (r > prevMaxR) prevMaxR = r;
+    }
+    final bwEx = prevBestW == 0 && prevMaxR > 0;
+    final hasTarget = widget.prevSets.isNotEmpty && (prevBestW > 0 || prevMaxR > 0);
+    final targetLabel = bwEx
+        ? 'Try: ${prevMaxR + 2} reps'
+        : (prevBestW > 0
+            ? 'Try: ${(prevBestW + 2.5) % 1 == 0 ? (prevBestW + 2.5).toStringAsFixed(0) : (prevBestW + 2.5).toStringAsFixed(1)}kg'
+            : '');
+
     return Container(
       decoration: BoxDecoration(
         color: NudgeTokens.elevated,
@@ -1111,6 +1128,34 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        if (hasTarget) ...[
+                          const SizedBox(height: 5),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: NudgeTokens.gymB.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(7),
+                              border: Border.all(color: NudgeTokens.gymB.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.track_changes_rounded, size: 11,
+                                    color: NudgeTokens.gymB),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'TARGET  $targetLabel',
+                                  style: const TextStyle(
+                                    color: NudgeTokens.gymB,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ],
@@ -1233,8 +1278,9 @@ class _ExerciseCardState extends State<_ExerciseCard> {
               }
             }
             final canRemove = widget.sets.length > 1;
+            final sid = (s['_sid'] as String?) ?? '${widget.name}_$si';
             return Dismissible(
-              key: ValueKey('set_${widget.name}_$si'),
+              key: ValueKey(sid),
               direction: canRemove ? DismissDirection.endToStart : DismissDirection.none,
               background: Container(
                 alignment: Alignment.centerRight,
@@ -1620,8 +1666,8 @@ class _NoteField extends StatelessWidget {
       ),
       child: TextField(
         controller: controller,
-        maxLines: 3,
-        minLines: 1,
+        maxLines: null,
+        minLines: 2,
         style: const TextStyle(
             color: NudgeTokens.textMid, fontSize: 14, height: 1.5),
         decoration: const InputDecoration(

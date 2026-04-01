@@ -12,7 +12,9 @@ import 'meal_selector.dart';
 class AddFoodSheet extends StatefulWidget {
   final String? initialMeal;
   final String? initialDescription;
-  const AddFoodSheet({super.key, this.initialMeal, this.initialDescription});
+  final DateTime? date;
+  const AddFoodSheet(
+      {super.key, this.initialMeal, this.initialDescription, this.date});
 
   @override
   State<AddFoodSheet> createState() => _AddFoodSheetState();
@@ -473,7 +475,11 @@ class _AddFoodSheetState extends State<AddFoodSheet> {
                     onPressed: () async {
                       final nav = Navigator.of(context);
                       for (var item in _parsedItems!) {
-                        await FoodService.saveEntry({...item, 'mealType': _selectedMeal});
+                        await FoodService.saveEntry({
+  ...item,
+  'mealType': _selectedMeal,
+  if (widget.date != null) 'timestamp': widget.date!.toIso8601String(),
+});
                       }
                       nav.pop();
                     },

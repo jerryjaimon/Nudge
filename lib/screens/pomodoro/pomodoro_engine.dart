@@ -149,7 +149,8 @@ class PomodoroEngine {
     final tracked = AppStorage.settingsBox.get('tracked_apps', defaultValue: <dynamic>[]) as List;
     final apps = tracked.map((e) => e.toString()).toList();
     if (apps.isNotEmpty) {
-      await PomodoroService.startBlocker(apps);
+      final tone = AppStorage.settingsBox.get('blocker_tone', defaultValue: 'motivating') as String;
+      await PomodoroService.startBlocker(apps, tone: tone);
     }
 
     WakelockPlus.enable();
@@ -201,7 +202,8 @@ class PomodoroEngine {
     final tracked = AppStorage.settingsBox.get('tracked_apps', defaultValue: <dynamic>[]) as List;
     final apps = tracked.map((e) => e.toString()).toList();
     if (apps.isNotEmpty) {
-      await PomodoroService.startBlocker(apps);
+      final tone = AppStorage.settingsBox.get('blocker_tone', defaultValue: 'motivating') as String;
+      await PomodoroService.startBlocker(apps, tone: tone);
     }
     WakelockPlus.enable();
   }

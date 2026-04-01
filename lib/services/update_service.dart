@@ -11,7 +11,7 @@ import 'package:path_provider/path_provider.dart';
 // ── Configure these ───────────────────────────────────────────────────────────
 const _kGitHubOwner    = 'jerryjaimon'; // TODO: replace with your GitHub username
 const _kGitHubRepo     = 'Nudge';  // TODO: replace with your repo name
-const _kCurrentVersion = '1.0.0';        // Keep in sync with pubspec.yaml version
+const _kCurrentVersion = '1.1.0';        // Keep in sync with pubspec.yaml version
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ReleaseInfo {

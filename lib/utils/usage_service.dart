@@ -51,47 +51,91 @@ class UsageService {
     await UsageStats.grantUsagePermission();
   }
 
+  /// Fetch per-package usage (ms) for a single day (midnight → midnight).
+  /// Deduplicates by keeping the entry with the latest lastTimeStamp per package,
+  /// preventing double-counting when Android returns multiple buckets for the same app.
+  static Future<Map<String, int>> fetchDayStats(DateTime date, {List<String>? trackedApps}) async {
+    if (!Platform.isAndroid) return {};
+    final start = DateTime(date.year, date.month, date.day);
+    final end = start.add(const Duration(days: 1));
+    final raw = await UsageStats.queryUsageStats(start, end);
+    final best = <String, UsageInfo>{};
+    for (final s in raw) {
+      final pkg = s.packageName;
+      if (pkg == null || pkg.isEmpty) continue;
+      final ms = int.tryParse(s.totalTimeInForeground ?? '0') ?? 0;
+      if (ms <= 0) continue;
+      if (trackedApps != null && trackedApps.isNotEmpty && !trackedApps.contains(pkg)) continue;
+      final existing = best[pkg];
+      if (existing == null) {
+        best[pkg] = s;
+      } else {
+        final existingTs = int.tryParse(existing.lastTimeStamp ?? '0') ?? 0;
+        final currentTs = int.tryParse(s.lastTimeStamp ?? '0') ?? 0;
+        if (currentTs > existingTs) best[pkg] = s;
+      }
+    }
+    final result = <String, int>{};
+    for (final entry in best.entries) {
+      result[entry.key] = int.tryParse(entry.value.totalTimeInForeground ?? '0') ?? 0;
+    }
+    return result;
+  }
+
+  static String formatDurationMs(int ms) {
+    final minutes = (ms / 60000).round();
+    if (minutes < 60) return '${minutes}m';
+    final hours = minutes ~/ 60;
+    final rem = minutes % 60;
+    return rem == 0 ? '${hours}h' : '${hours}h ${rem}m';
+  }
+
   static Future<List<UsageInfo>> fetchUsageStats({bool monthly = false, List<String>? trackedApps}) async {
     if (!Platform.isAndroid) return [];
-    
-    DateTime endDate = DateTime.now();
-    DateTime startDate = monthly 
-      ? DateTime(endDate.year, endDate.month, 1) // Start of month
-      : endDate.subtract(const Duration(days: 1)); // Last 24h
 
-    List<UsageInfo> usageStats = await UsageStats.queryUsageStats(startDate, endDate);
-    
-    // Filter out apps with 0 usage
-    usageStats = usageStats.where((info) {
-      final time = int.tryParse(info.totalTimeInForeground ?? '0') ?? 0;
-      if (time <= 0) return false;
-      
-      if (trackedApps != null && trackedApps.isNotEmpty) {
-        return trackedApps.contains(info.packageName);
-      }
-      return true;
-    }).toList();
+    DateTime now = DateTime.now();
+    DateTime startDate = monthly
+      ? DateTime(now.year, now.month, 1)
+      : DateTime(now.year, now.month, now.day);
 
-    // Aggregate usage for the same package
-    final Map<String, int> durations = {};
-    final Map<String, UsageInfo> baseInfos = {};
+    // Query stats for the interval.
+    List<UsageInfo> usageStats = await UsageStats.queryUsageStats(startDate, now);
+    
+    // Deduplicate by package name. Android often returns multiple buckets (yesterday/today)
+    // if the query interval spans a boundary. We only want the most accurate/recent total
+    // for our specific interval.
+    final Map<String, UsageInfo> bestInfos = {};
     
     for (var info in usageStats) {
-      final pkg = info.packageName!;
+      final pkg = info.packageName;
+      if (pkg == null || pkg.isEmpty) continue;
+      
       final time = int.tryParse(info.totalTimeInForeground ?? '0') ?? 0;
-      durations[pkg] = (durations[pkg] ?? 0) + time;
-      baseInfos.putIfAbsent(pkg, () => info);
+      if (time <= 0) continue;
+      
+      if (trackedApps != null && trackedApps.isNotEmpty && !trackedApps.contains(pkg)) continue;
+
+      // If we already have info for this app, keep the one with the LATEST activity.
+      // This ensures that if we get both "yesterday's bucket" and "today's bucket", 
+      // we pick the one that represents the current day's usage.
+      final existing = bestInfos[pkg];
+      if (existing == null) {
+        bestInfos[pkg] = info;
+      } else {
+        final existingEnd = int.tryParse(existing.lastTimeStamp ?? '0') ?? 0;
+        final currentEnd = int.tryParse(info.lastTimeStamp ?? '0') ?? 0;
+        if (currentEnd > existingEnd) {
+          bestInfos[pkg] = info;
+        }
+      }
     }
 
-    final List<UsageInfo> result = [];
-    for (var entry in baseInfos.entries) {
-      // Create a wrapper or just use the base info with a modified calculation in formatDuration
-      // Actually, UsageInfo in usage_stats 1.3.1 might have no setter, so we must calculate our own map
-      result.add(entry.value);
-    }
-
-    // Since we can't modify UsageInfo, we'll return the base list but sorted by our aggregated durations
-    result.sort((a, b) => (durations[b.packageName] ?? 0).compareTo(durations[a.packageName] ?? 0));
+    final List<UsageInfo> result = bestInfos.values.toList();
+    result.sort((a, b) {
+      final tA = int.tryParse(a.totalTimeInForeground ?? '0') ?? 0;
+      final tB = int.tryParse(b.totalTimeInForeground ?? '0') ?? 0;
+      return tB.compareTo(tA);
+    });
 
     return result;
   }
@@ -99,10 +143,7 @@ class UsageService {
   static String formatDuration(String? durationMs) {
     if (durationMs == null) return '0m';
     int ms = int.tryParse(durationMs) ?? 0;
-    int minutes = (ms / 60000).round();
-    if (minutes < 60) return '${minutes}m';
-    int hours = minutes ~/ 60;
-    int remainingMinutes = minutes % 60;
-    return '${hours}h ${remainingMinutes}m';
+    return formatDurationMs(ms);
   }
 }
+

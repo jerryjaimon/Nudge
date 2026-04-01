@@ -324,20 +324,24 @@ class _HealthCenterScreenState extends State<HealthCenterScreen> {
                     },
                     trailing: const Icon(Icons.chevron_right_rounded, color: NudgeTokens.textLow),
                   ),
-                  _SettingTile(
-                    icon: Icons.schedule_rounded,
-                    title: 'Day Boundary',
-                    subtitle: 'Set when your day starts (e.g. 6 AM for night owls)',
-                    onTap: _openDayBoundarySheet,
-                    trailing: Text(
-                      () {
-                        final h = HealthService.getDayStartHour();
-                        if (h == 0) return 'Midnight';
-                        final suffix = h < 12 ? 'AM' : 'PM';
-                        final disp = h % 12 == 0 ? 12 : h % 12;
-                        return '$disp:00 $suffix';
-                      }(),
-                      style: const TextStyle(color: NudgeTokens.textLow, fontSize: 12, fontWeight: FontWeight.w600),
+                  Opacity(
+                    opacity: 0.45,
+                    child: _SettingTile(
+                      icon: Icons.schedule_rounded,
+                      title: 'Day Boundary',
+                      subtitle: 'Set when your day starts (e.g. 6 AM for night owls)',
+                      onTap: null,
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: NudgeTokens.textLow.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'Coming Soon',
+                          style: TextStyle(color: NudgeTokens.textLow, fontSize: 10, fontWeight: FontWeight.w700),
+                        ),
+                      ),
                     ),
                   ),
                       ],
@@ -435,16 +439,6 @@ class _HealthCenterScreenState extends State<HealthCenterScreen> {
     }
   }
 
-  void _openDayBoundarySheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: NudgeTokens.card,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => _DayBoundarySheet(onSaved: _load),
-    );
-  }
 }
 
 // ─── Profile strip ────────────────────────────────────────────────────────────

@@ -4,8 +4,12 @@
 // widgets via the home_widget package SharedPreferences bridge.
 // Call WidgetService.updateAll() after any significant data change.
 
+import 'dart:convert';
 import 'package:home_widget/home_widget.dart';
 import '../storage.dart';
+import 'package:usage_stats/usage_stats.dart';
+import '../utils/usage_service.dart';
+import '../utils/usage_service.dart';
 
 class WidgetService {
   static Future<void> updateAll() async {
@@ -17,6 +21,7 @@ class WidgetService {
       _updateFood(),
       _updateBackup(),
       _updateDayTracker(),
+      _updateScreenTime(),
     ]);
   }
 
@@ -214,42 +219,58 @@ class WidgetService {
     try {
       final box = await AppStorage.getSettingsBox();
       final raw = box.get('day_trackers', defaultValue: <dynamic>[]) as List;
-      if (raw.isEmpty) return;
-
-      final first = (raw.first as Map).cast<String, dynamic>();
-      final title = (first['title'] as String?) ?? 'Tracker';
-      final isDateBased = (first['isDateBased'] as bool?) ?? false;
-      final colorVal = (first['color'] as int?) ?? 0xFF7C4DFF;
-
-      int current, total;
-      if (isDateBased) {
-        final startStr = first['startDate'] as String?;
-        final endStr = first['endDate'] as String?;
-        final start = startStr != null ? DateTime.tryParse(startStr) : null;
-        final end = endStr != null ? DateTime.tryParse(endStr) : null;
-        if (start != null && end != null) {
-          final today = DateTime.now();
-          final todayDay = DateTime(today.year, today.month, today.day);
-          final startDay = DateTime(start.year, start.month, start.day);
-          final endDay = DateTime(end.year, end.month, end.day);
-          total = endDay.difference(startDay).inDays;
-          current = todayDay.difference(startDay).inDays.clamp(0, total);
-        } else {
-          current = 0;
-          total = 365;
-        }
-      } else {
-        current = (first['currentDay'] as int?) ?? 0;
-        total = (first['totalDays'] as int?) ?? 100;
+      if (raw.isEmpty) {
+        await HomeWidget.saveWidgetData<String>('trackers_list_json', '[]');
+        await HomeWidget.updateWidget(androidName: 'DayTrackerWidget');
+        return;
       }
 
-      final pctInt = total > 0 ? ((current / total) * 100).round().clamp(0, 100) : 0;
+      final today = DateTime.now();
+      final todayDay = DateTime(today.year, today.month, today.day);
 
-      await HomeWidget.saveWidgetData<String>('tracker_title', title);
-      await HomeWidget.saveWidgetData<int>('tracker_current', current);
-      await HomeWidget.saveWidgetData<int>('tracker_total', total);
-      await HomeWidget.saveWidgetData<int>('tracker_color', colorVal);
-      await HomeWidget.saveWidgetData<int>('tracker_pct_int', pctInt);
+      final outList = <Map<String, dynamic>>[];
+
+      for (final item in raw) {
+        try {
+          final tMap = (item as Map).cast<String, dynamic>();
+          final title = (tMap['title'] as String?) ?? 'Tracker';
+          final isDateBased = (tMap['isDateBased'] as bool?) ?? false;
+          final colorVal = (tMap['color'] as int?) ?? 0xFF7C4DFF;
+
+          int current, total;
+          if (isDateBased) {
+            final startStr = tMap['startDate'] as String?;
+            final endStr = tMap['endDate'] as String?;
+            final start = startStr != null ? DateTime.tryParse(startStr) : null;
+            final end = endStr != null ? DateTime.tryParse(endStr) : null;
+            if (start != null && end != null) {
+              final startDay = DateTime(start.year, start.month, start.day);
+              final endDay = DateTime(end.year, end.month, end.day);
+              total = endDay.difference(startDay).inDays;
+              current = todayDay.difference(startDay).inDays.clamp(0, total);
+            } else {
+              current = 0;
+              total = 365;
+            }
+          } else {
+            current = (tMap['currentDay'] as int?) ?? 0;
+            total = (tMap['totalDays'] as int?) ?? 100;
+          }
+
+          final pctInt = total > 0 ? ((current / total) * 100).round().clamp(0, 100) : 0;
+          
+          outList.add({
+            'title': title,
+            'current': current,
+            'total': total,
+            'color': colorVal,
+            'pct_int': pctInt,
+          });
+        } catch (_) {}
+      }
+
+      final jsonStr = jsonEncode(outList);
+      await HomeWidget.saveWidgetData<String>('trackers_list_json', jsonStr);
       await HomeWidget.updateWidget(androidName: 'DayTrackerWidget');
     } catch (_) {}
   }
@@ -283,4 +304,58 @@ class WidgetService {
       await HomeWidget.updateWidget(androidName: 'FoodWidget');
     } catch (_) {}
   }
+
+  // ── Screen Time ──────────────────────────────────────────────────────────────
+
+  static Future<void> _updateScreenTime() async {
+    try {
+      if (!AppStorage.enabledModules.contains('detox')) return;
+      
+      final hasPermission = await UsageService.checkPermission();
+      if (!hasPermission) {
+        await HomeWidget.saveWidgetData<String>('screentime_total', 'No Access');
+        await HomeWidget.saveWidgetData<String>('screentime_apps', 'Grant permission in app');
+        await HomeWidget.updateWidget(androidName: 'ScreenTimeWidget');
+        return;
+      }
+
+      final trackedList = (AppStorage.settingsBox.get(
+        'tracked_apps',
+        defaultValue: <String>[],
+      ) as List).cast<String>();
+
+      final usage = await UsageService.fetchUsageStats(trackedApps: trackedList);
+
+      int ms = 0;
+      for (final info in usage) {
+        ms += int.tryParse(info.totalTimeInForeground ?? '0') ?? 0;
+      }
+      final totalTimeStr = UsageService.formatDuration(ms.toString());
+
+      final topApps = usage.take(3).toList();
+      final appsList = <Map<String, dynamic>>[];
+      
+      for (final app in topApps) {
+        final pkg = app.packageName;
+        if (pkg == null) continue;
+        final appName = await UsageService.resolveAppName(pkg);
+        final timeMs = int.tryParse(app.totalTimeInForeground ?? '0') ?? 0;
+        appsList.add({
+          'name': appName,
+          'timeMs': timeMs,
+          'timeStr': UsageService.formatDuration(timeMs.toString()),
+        });
+      }
+
+      final outMap = {
+        'totalMs': ms,
+        'totalStr': totalTimeStr,
+        'apps': appsList,
+      };
+
+      await HomeWidget.saveWidgetData<String>('screentime_json', jsonEncode(outMap));
+      await HomeWidget.updateWidget(androidName: 'ScreenTimeWidget');
+    } catch (_) {}
+  }
 }
+

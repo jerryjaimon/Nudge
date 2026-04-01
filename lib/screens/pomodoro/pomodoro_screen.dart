@@ -319,7 +319,10 @@ class _PomodoroScreenState extends State<PomodoroScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Session logged!')),
       );
-      setState(() {});
+      // Force the ValueListenableBuilder to re-run its builder so project
+      // time badges update immediately. PomodoroState has no == override so
+      // copyWith() creates a new instance, causing ValueNotifier to notify.
+      _engine.notifier.value = _engine.notifier.value.copyWith();
     }
   }
 

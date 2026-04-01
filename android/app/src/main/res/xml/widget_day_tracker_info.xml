@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:initialLayout="@layout/widget_day_tracker"
-    android:minWidth="250dp"
-    android:minHeight="180dp"
-    android:targetCellWidth="4"
-    android:targetCellHeight="3"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
     android:updatePeriodMillis="1800000"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:previewLayout="@layout/widget_day_tracker"
+    android:configure="com.example.nudge.DayTrackerConfigActivity"
     android:label="@string/widget_day_tracker_label"
     android:description="@string/widget_day_tracker_description"/>

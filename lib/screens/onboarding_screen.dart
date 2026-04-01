@@ -12,6 +12,7 @@ import '../utils/mock_data_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'auth/sign_in_screen.dart';
+import 'onboarding/restore_from_cloud_screen.dart';
 
 // ─── Onboarding steps ────────────────────────────────────────────────────────
 //  0  Welcome
@@ -420,6 +421,33 @@ A structured progressive plan built around your $_gymDays training days/week.
         children: [
           _AnimatedSecurityShield(pulse: _pulseCtrl),
           const SizedBox(height: 32),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => RestoreFromCloudScreen(
+                    onRestored: () {
+                      AppStorage.hasSeenOnboarding = true;
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const HomeScreen()),
+                        (route) => false,
+                      );
+                    },
+                    onSkip: () {
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.cloud_download_rounded, color: NudgeTokens.blue, size: 16),
+            label: const Text('Restore from Cloud Backup', style: TextStyle(color: NudgeTokens.blue, fontSize: 13, fontWeight: FontWeight.w600)),
+            style: TextButton.styleFrom(
+              backgroundColor: NudgeTokens.blue.withValues(alpha: 0.1),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+          ),
+          const SizedBox(height: 16),
           TextButton.icon(
             onPressed: () async {
               showDialog(

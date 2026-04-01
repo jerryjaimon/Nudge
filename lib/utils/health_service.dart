@@ -1022,13 +1022,16 @@ class HealthService {
         if (matchIdx < 0) {
           uniqueSessions.add(s);
         } else {
-          // Keep the entry with more complete data (prefer longer duration or more distance)
+          // Keep the entry with more complete data.
+          // Priority: (1) more distance, (2) more calories (watch > phone), (3) longer duration.
           final existing = uniqueSessions[matchIdx];
           final dist = (s['distanceKm'] as num?)?.toDouble() ?? 0.0;
           final eDist = (existing['distanceKm'] as num?)?.toDouble() ?? 0.0;
+          final cal = (s['calories'] as num?)?.toInt() ?? 0;
+          final eCal = (existing['calories'] as num?)?.toInt() ?? 0;
           final dur = (s['durationMin'] as num?)?.toDouble() ?? 0.0;
           final eDur = (existing['durationMin'] as num?)?.toDouble() ?? 0.0;
-          if (dist > eDist || (dist == eDist && dur > eDur)) {
+          if (dist > eDist || (dist == eDist && cal > eCal) || (dist == eDist && cal == eCal && dur > eDur)) {
             uniqueSessions[matchIdx] = s;
           }
         }

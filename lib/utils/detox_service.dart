@@ -87,7 +87,8 @@ class DetoxService {
 
     if (shouldBlock) {
       if (!_isCurrentlyBlocking || !listEquals(appsToBlock, _lastBlockedApps)) {
-        await PomodoroService.startBlocker(appsToBlock.toSet().toList());
+        final tone = box.get('blocker_tone', defaultValue: 'motivating') as String;
+        await PomodoroService.startBlocker(appsToBlock.toSet().toList(), tone: tone);
         _isCurrentlyBlocking = true;
         _lastBlockedApps = appsToBlock.toSet().toList();
       }

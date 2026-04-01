@@ -7,6 +7,7 @@ import 'screens/auth/sign_in_screen.dart';
 import 'storage.dart';
 import 'utils/theme_service.dart';
 import 'utils/nudge_theme_extension.dart';
+import 'screens/auth/backup_check_screen.dart';
 
 /// Central design tokens — import this anywhere you need raw values.
 abstract class NudgeTokens {
@@ -93,13 +94,21 @@ class NudgeApp extends StatelessWidget {
                 return SignInScreen(onDone: () {
                   AppStorage.settingsBox.put('has_shown_sign_in', true);
                   // Explicit Navigation since StreamBuilder doesn't listen to Hive
-                  Navigator.of(ctx).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => AppStorage.hasSeenOnboarding 
-                          ? const HomeScreen() 
-                          : const OnboardingScreen(),
-                    ),
-                  );
+                  if (FirebaseAuth.instance.currentUser != null) {
+                    Navigator.of(ctx).pushReplacement(
+                      MaterialPageRoute(
+                        builder: (_) => const BackupCheckScreen(fromSettings: false),
+                      ),
+                    );
+                  } else {
+                    Navigator.of(ctx).pushReplacement(
+                      MaterialPageRoute(
+                        builder: (_) => AppStorage.hasSeenOnboarding 
+                            ? const HomeScreen() 
+                            : const OnboardingScreen(),
+                      ),
+                    );
+                  }
                 });
               }
 

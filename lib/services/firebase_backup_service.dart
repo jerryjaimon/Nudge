@@ -136,10 +136,24 @@ class FirebaseBackupService {
 
   // ── Restore ────────────────────────────────────────────────────────────────
 
-  static Future<void> restore(String passphrase) async {
+  // Settings keys that represent user preferences and should be restored.
+  // Excludes device/session state (auto_backup_enabled, last_backup_at,
+  // step_seen_categories, etc.) that should not travel between devices/sessions.
+  static const _settingsWhitelist = {
+    'target_water_ml', 'target_budget', 'enabled_modules',
+    'gemini_api_key', 'gemini_api_key_1', 'gemini_api_key_2', 'active_gemini_key_index',
+    'health_source_priority', 'health_source_disabled', 'pinned_source',
+    'theme', 'is_home_list_view',
+    'reminder_enabled', 'reminder_hour', 'reminder_minute', 'reminder_persistent',
+    'has_seen_onboarding', 'gym_goal_days',
+  };
+
+  static Future<int> restore(String passphrase) async {
     if (passphrase.isEmpty) throw ArgumentError('Passphrase must not be empty');
     final uid = _requireUid();
     final ref = _backupRef(uid);
+
+    int restoredBoxes = 0;
 
     for (final entry in _allBoxes().entries) {
       final doc = await ref.doc(entry.key).get();
@@ -156,11 +170,27 @@ class FirebaseBackupService {
       }
 
       final decoded = jsonDecode(json) as Map<String, dynamic>;
-      await entry.value.clear();
-      for (final kv in decoded.entries) {
-        await entry.value.put(kv.key, kv.value);
+
+      if (entry.key == 'settings') {
+        // Selective restore: only overwrite whitelisted preference keys.
+        for (final kv in decoded.entries) {
+          if (_settingsWhitelist.contains(kv.key)) {
+            await entry.value.put(kv.key, kv.value);
+          }
+        }
+      } else {
+        await entry.value.clear();
+        for (final kv in decoded.entries) {
+          await entry.value.put(kv.key, kv.value);
+        }
       }
+      restoredBoxes++;
     }
+
+    if (restoredBoxes == 0) {
+      throw Exception('No backup found in the cloud for this account.');
+    }
+    return restoredBoxes;
   }
 
   // ── Delete Backup ──────────────────────────────────────────────────────────
@@ -182,6 +212,21 @@ class FirebaseBackupService {
 
     await batch.commit();
     await AppStorage.settingsBox.delete('last_backup_at');
+  }
+
+  // ── Existence check ────────────────────────────────────────────────────────
+
+  /// Returns true if at least one backup document exists for the current user.
+  /// Safe to call even if the user is not signed in (returns false).
+  static Future<bool> checkBackupExists() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return false;
+    try {
+      final snapshot = await _backupRef(uid).limit(1).get();
+      return snapshot.docs.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 
   // ── Box map ────────────────────────────────────────────────────────────────
