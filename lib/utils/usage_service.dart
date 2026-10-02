@@ -97,9 +97,12 @@ class UsageService {
     DateTime startDate = monthly
       ? DateTime(now.year, now.month, 1)
       : DateTime(now.year, now.month, now.day);
+    // Use end-of-day (+1ms) so Android returns the full daily bucket
+    // rather than a partial bucket which can be stale.
+    final endDate = monthly ? now : now.add(const Duration(milliseconds: 1));
 
     // Query stats for the interval.
-    List<UsageInfo> usageStats = await UsageStats.queryUsageStats(startDate, now);
+    List<UsageInfo> usageStats = await UsageStats.queryUsageStats(startDate, endDate);
     
     // Deduplicate by package name. Android often returns multiple buckets (yesterday/today)
     // if the query interval spans a boundary. We only want the most accurate/recent total

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -16,8 +17,7 @@ import 'finance/finance_screen.dart';
 import 'settings_screen.dart';
 import 'activity/activity_summary_screen.dart';
 import 'health/running_coach_list_screen.dart';
-import '../widgets/weekly_progress_card.dart';
-import '../services/running_coach_service.dart';
+import '../utils/ai_analysis_service.dart';
 import 'food/food_screen.dart';
 import 'package:usage_stats/usage_stats.dart';
 import '../widgets/water_tracker_card.dart';
@@ -61,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           const _HomeTab(),
           ActivitySummaryScreen(key: ValueKey(_activityRefreshKey)),
-          const _ProgressTab(),
+          const _ModulesTab(),
           const SettingsScreen(),
         ],
       ),
@@ -169,29 +169,6 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
     }
   }
 
-  String _healthStatus() {
-    final hs = _stats['healthStats'] as Map<String, dynamic>?;
-    if (hs == null) return 'Set up profile';
-    final eaten = (hs['caloriesIn'] as num?)?.toInt() ?? 0;
-    final target = (hs['caloriesTarget'] as num?)?.toInt() ?? 0;
-    if (target == 0) return 'Set up profile';
-    return '$eaten / $target kcal';
-  }
-
-  String _financeStatus() {
-    final spent = (_stats['financeSpent'] as double?) ?? 0.0;
-    final budget = (_stats['financeBudget'] as double?) ?? 0.0;
-    if (budget > 0) {
-      final remaining = budget - spent;
-      final abs = remaining.abs();
-      return remaining >= 0
-          ? '£${abs.toStringAsFixed(0)} left'
-          : '-£${abs.toStringAsFixed(0)} over';
-    }
-    if (spent > 0) return '£${spent.toStringAsFixed(0)} spent';
-    return 'No expenses';
-  }
-
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -212,24 +189,16 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
           // 3. Daily stats strip
           SliverToBoxAdapter(child: _buildDailyStats()),
 
-          // 4. Module sections with category labels
-          ..._buildSections(context),
-
-          // 5. Water
-          if (AppStorage.enabledModules.contains('health'))
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-              sliver: SliverToBoxAdapter(
-                child: WaterTrackerCard(onRefresh: _fetchStats),
-              ),
-            ),
-
-          // 7. Screen time
+          // 4. AI Insights card
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-            sliver: SliverToBoxAdapter(
-              child: _ScreenTimeCard(stats: _stats, loading: _loading),
-            ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            sliver: SliverToBoxAdapter(child: _AiInsightsCard(stats: _stats)),
+          ),
+
+          // 5. Weekly snapshot
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            sliver: SliverToBoxAdapter(child: _WeeklySnapshot(stats: _stats)),
           ),
 
           SliverToBoxAdapter(child: SizedBox(height: MediaQuery.of(context).padding.bottom + 110)),
@@ -265,240 +234,6 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
       habitValueText: '${caloriesIn.toInt()} / ${caloriesTarget.toInt()} kcal',
     );
   }
-
-  List<Widget> _buildSections(BuildContext context) {
-    final slivers = <Widget>[];
-
-    // ── Health & Fitness ───────────────────────────────────────────────────
-    final healthCards = <Widget>[];
-    if (AppStorage.enabledModules.contains('health')) {
-      healthCards.add(_ModuleCard(
-        title: 'Health',
-        status: _loading ? '…' : _healthStatus(),
-        icon: Icons.monitor_heart_rounded,
-        accentA: NudgeTokens.healthA,
-        accentB: NudgeTokens.healthB,
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(
-                builder: (_) => const HealthCenterScreen()))
-            .then((_) => _fetchStats()),
-      ));
-    }
-    // Activity card is shown as a full-width card below the grid (see _buildSections)
-    if (AppStorage.enabledModules.contains('gym')) {
-      healthCards.add(_ModuleCard(
-        title: 'Gym',
-        status: _loading ? '…' : '${_stats['gymSets'] ?? 0} sets today',
-        icon: Icons.fitness_center_rounded,
-        accentA: NudgeTokens.gymA,
-        accentB: NudgeTokens.gymB,
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const GymScreen()))
-            .then((_) => _fetchStats()),
-      ));
-    }
-    if (AppStorage.enabledModules.contains('food')) {
-      healthCards.add(_ModuleCard(
-        title: 'Food',
-        status: _loading
-            ? '…'
-            : '${(_stats['todayCalories'] as double? ?? 0.0).toInt()} kcal today',
-        icon: Icons.restaurant_rounded,
-        accentA: NudgeTokens.foodA,
-        accentB: NudgeTokens.foodB,
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const FoodScreen()))
-            .then((_) => _fetchStats()),
-      ));
-    }
-    if (AppStorage.enabledModules.contains('health')) {
-      final steps = (_stats['steps'] as num?)?.toInt() ?? 0;
-      final cal = (_stats['caloriesBurned'] as num?)?.toInt() ?? 0;
-      healthCards.add(_ModuleCard(
-        title: 'Cardio Coach',
-        status: _loading ? '…' : (steps > 0 ? '$steps steps' : 'No sessions'),
-        icon: Icons.route_rounded,
-        accentA: NudgeTokens.purple,
-        accentB: NudgeTokens.purple,
-        metrics: _loading
-            ? null
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Spacer(),
-                  Text(
-                    steps >= 1000
-                        ? '${(steps / 1000).toStringAsFixed(1)}k'
-                        : (steps > 0 ? '$steps' : '--'),
-                    style: GoogleFonts.outfit(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      color: NudgeTokens.green,
-                      height: 1.0,
-                    ),
-                  ),
-                  const Text('steps',
-                      style: TextStyle(
-                          fontSize: 10,
-                          color: NudgeTokens.textLow,
-                          fontWeight: FontWeight.w600)),
-                  if (cal > 0) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      '$cal kcal',
-                      style: GoogleFonts.outfit(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: NudgeTokens.amber),
-                    ),
-                  ],
-                  const SizedBox(height: 2),
-                ],
-              ),
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(
-                builder: (_) => const RunningCoachListScreen()))
-            .then((_) => _fetchStats()),
-      ));
-    }
-    if (healthCards.isNotEmpty) {
-      slivers.add(_sectionLabel('HEALTH & FITNESS'));
-      slivers.add(_moduleGrid(healthCards));
-    }
-
-    // ── Productivity ───────────────────────────────────────────────────────
-    final prodCards = <Widget>[];
-    if (AppStorage.enabledModules.contains('pomodoro')) {
-      prodCards.add(_ModuleCard(
-        title: 'Pomodoro',
-        status: _loading
-            ? '…'
-            : '${((_stats['pomMinutes'] as num? ?? 0) / 60).toStringAsFixed(1)} hrs today',
-        icon: Icons.timer_rounded,
-        accentA: NudgeTokens.pomA,
-        accentB: NudgeTokens.pomB,
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const PomodoroScreen()))
-            .then((_) => _fetchStats()),
-      ));
-    }
-    if (AppStorage.enabledModules.contains('my_habits')) {
-      prodCards.add(_ModuleCard(
-        title: 'My Habits',
-        status: _loading ? '…' : 'Daily tracker',
-        icon: Icons.checklist_rounded,
-        accentA: NudgeTokens.purple,
-        accentB: NudgeTokens.green,
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const MyHabitsScreen()))
-            .then((_) => _fetchStats()),
-      ));
-    }
-    prodCards.add(_ModuleCard(
-      title: 'Day Trackers',
-      status: 'Year progress',
-      icon: Icons.grid_view_rounded,
-      accentA: NudgeTokens.purple.withValues(alpha: 0.3),
-      accentB: NudgeTokens.purple,
-      onTap: () => Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => const DayTrackerScreen()))
-          .then((_) => _fetchStats()),
-    ));
-    if (prodCards.isNotEmpty) {
-      slivers.add(_sectionLabel('PRODUCTIVITY'));
-      slivers.add(_moduleGrid(prodCards));
-    }
-
-    // ── Entertainment ──────────────────────────────────────────────────────
-    final entertainCards = <Widget>[];
-    if (AppStorage.enabledModules.contains('movies')) {
-      entertainCards.add(_ModuleCard(
-        title: 'Movies',
-        status: _loading ? '…' : '${_stats['moviesCount'] ?? 0} this month',
-        icon: Icons.local_movies_rounded,
-        accentA: NudgeTokens.moviesA,
-        accentB: NudgeTokens.moviesB,
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const MoviesScreen()))
-            .then((_) => _fetchStats()),
-      ));
-    }
-    if (AppStorage.enabledModules.contains('books')) {
-      entertainCards.add(_ModuleCard(
-        title: 'Books',
-        status: _loading ? '…' : '${_stats['booksCount'] ?? 0} active',
-        icon: Icons.menu_book_rounded,
-        accentA: NudgeTokens.booksA,
-        accentB: NudgeTokens.booksB,
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const BooksScreen()))
-            .then((_) => _fetchStats()),
-      ));
-    }
-    if (entertainCards.isNotEmpty) {
-      slivers.add(_sectionLabel('ENTERTAINMENT'));
-      slivers.add(_moduleGrid(entertainCards));
-    }
-
-    // ── Finance & Wellbeing ────────────────────────────────────────────────
-    final finCards = <Widget>[];
-    if (AppStorage.enabledModules.contains('finance')) {
-      finCards.add(_ModuleCard(
-        title: 'Finance',
-        status: _loading ? '…' : _financeStatus(),
-        icon: Icons.account_balance_wallet_rounded,
-        accentA: NudgeTokens.finA,
-        accentB: NudgeTokens.finB,
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const FinanceScreen()))
-            .then((_) => _fetchStats()),
-      ));
-    }
-    if (AppStorage.enabledModules.contains('detox')) {
-      finCards.add(_ModuleCard(
-        title: 'Digital Wellbeing',
-        status: 'Screen Time & Detox',
-        icon: Icons.phone_android_rounded,
-        accentA: NudgeTokens.blue.withValues(alpha: 0.15),
-        accentB: NudgeTokens.purple,
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const DigitalWellbeingScreen()))
-            .then((_) => _fetchStats()),
-      ));
-    }
-    if (finCards.isNotEmpty) {
-      slivers.add(_sectionLabel('FINANCE & WELLBEING'));
-      slivers.add(_moduleGrid(finCards));
-    }
-
-    return slivers;
-  }
-
-  Widget _sectionLabel(String text) => SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-        sliver: SliverToBoxAdapter(
-          child: Text(
-            text,
-            style: GoogleFonts.outfit(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: NudgeTokens.textLow,
-              letterSpacing: 1.2,
-            ),
-          ),
-        ),
-      );
-
-  Widget _moduleGrid(List<Widget> cards) => SliverPadding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        sliver: SliverGrid.count(
-          crossAxisCount: 2,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 1.05,
-          children: cards,
-        ),
-      );
 
   Widget _buildHeader() {
     final now = DateTime.now();
@@ -630,31 +365,241 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
 
 }
 
-// ── Progress tab ───────────────────────────────────────────────────────────────
+// ── Modules tab (old home — full module grid) ─────────────────────────────────
 
-class _ProgressTab extends StatelessWidget {
-  const _ProgressTab();
+class _ModulesTab extends StatefulWidget {
+  const _ModulesTab();
+  @override
+  State<_ModulesTab> createState() => _ModulesTabState();
+}
+
+class _ModulesTabState extends State<_ModulesTab> with WidgetsBindingObserver {
+  Map<String, dynamic> _stats = {};
+  bool _loading = true;
+  Timer? _screenTimeTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _fetchStats();
+    // Refresh screen time every 3 minutes so it stays current
+    _screenTimeTimer = Timer.periodic(const Duration(minutes: 3), (_) => _fetchStats());
+  }
+
+  @override
+  void dispose() {
+    _screenTimeTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _fetchStats();
+  }
+
+  Future<void> _fetchStats() async {
+    final water = await HealthService.getTodayWater();
+    final finBox = await AppStorage.getFinanceBox();
+    final now2 = DateTime.now();
+    final monthKey = '${now2.year}-${now2.month.toString().padLeft(2, '0')}';
+    final allExpenses = (finBox.get('expenses', defaultValue: <dynamic>[]) as List)
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .where((e) => (e['date'] as String? ?? '').startsWith(monthKey))
+        .toList();
+    final spent = allExpenses.fold<double>(0.0, (s, e) {
+      final a = (e['amount'] as num?)?.toDouble() ?? 0.0;
+      return s + (a < 0 ? -a : 0);
+    });
+    final budgets = finBox.get('budgets', defaultValue: <String, dynamic>{}) as Map;
+    final budget = (budgets[monthKey] is num) ? (budgets[monthKey] as num).toDouble() : 0.0;
+    final healthStats = await HealthCenterService.getTodayStats();
+    final caloriesIn = (healthStats['caloriesIn'] ?? 0.0) as num;
+    if (mounted) {
+      setState(() {
+        _stats = healthStats;
+        _stats['gymSets'] = healthStats['gymSetsToday'] ?? 0;
+        _stats['todayCalories'] = caloriesIn;
+        _stats['totalScreentime'] = UsageService.formatDuration(
+            (healthStats['totalScreentimeMs'] ?? 0).toString());
+        _stats['healthStats'] = {
+          'caloriesIn': caloriesIn,
+          'caloriesTarget': healthStats['caloriesTarget'],
+        };
+        _stats['financeSpent'] = spent;
+        _stats['financeBudget'] = budget;
+        _stats['water'] = water;
+        _stats['monthlyUsage'] = healthStats['monthlyUsage'] ?? [];
+        _loading = false;
+      });
+    }
+  }
+
+  String _healthStatus() {
+    final hs = _stats['healthStats'] as Map<String, dynamic>?;
+    if (hs == null) return 'Set up profile';
+    final eaten = (hs['caloriesIn'] as num?)?.toInt() ?? 0;
+    final target = (hs['caloriesTarget'] as num?)?.toInt() ?? 0;
+    if (target == 0) return 'Set up profile';
+    return '$eaten / $target kcal';
+  }
+
+  String _financeStatus() {
+    final spent = (_stats['financeSpent'] as double?) ?? 0.0;
+    final budget = (_stats['financeBudget'] as double?) ?? 0.0;
+    if (budget > 0) {
+      final remaining = budget - spent;
+      final abs = remaining.abs();
+      return remaining >= 0 ? '£${abs.toStringAsFixed(0)} left' : '-£${abs.toStringAsFixed(0)} over';
+    }
+    if (spent > 0) return '£${spent.toStringAsFixed(0)} spent';
+    return 'No expenses';
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        title: Text(
-          'Weekly Progress',
-          style: GoogleFonts.outfit(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
+    return SafeArea(
+      child: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
+            sliver: SliverToBoxAdapter(
+              child: Text('Apps', style: GoogleFonts.outfit(
+                fontSize: 28, fontWeight: FontWeight.w900, color: Colors.white, height: 1)),
+            ),
           ),
-        ),
-        automaticallyImplyLeading: false,
+          ..._buildSections(context),
+          if (AppStorage.enabledModules.contains('health'))
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              sliver: SliverToBoxAdapter(child: WaterTrackerCard(onRefresh: _fetchStats)),
+            ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: _ScreenTimeCard(stats: _stats, loading: _loading),
+            ),
+          ),
+          SliverToBoxAdapter(child: SizedBox(height: MediaQuery.of(context).padding.bottom + 110)),
+        ],
       ),
-      body: const WeeklyProgressCard(fullScreen: true),
     );
   }
+
+  List<Widget> _buildSections(BuildContext context) {
+    final slivers = <Widget>[];
+    final healthCards = <Widget>[];
+    if (AppStorage.enabledModules.contains('health')) {
+      healthCards.add(_ModuleCard(
+        title: 'Health', status: _loading ? '…' : _healthStatus(),
+        icon: Icons.monitor_heart_rounded, accentA: NudgeTokens.healthA, accentB: NudgeTokens.healthB,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HealthCenterScreen())).then((_) => _fetchStats()),
+      ));
+    }
+    if (AppStorage.enabledModules.contains('gym')) {
+      healthCards.add(_ModuleCard(
+        title: 'Gym', status: _loading ? '…' : '${_stats['gymSets'] ?? 0} sets today',
+        icon: Icons.fitness_center_rounded, accentA: NudgeTokens.gymA, accentB: NudgeTokens.gymB,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const GymScreen())).then((_) => _fetchStats()),
+      ));
+    }
+    if (AppStorage.enabledModules.contains('food')) {
+      healthCards.add(_ModuleCard(
+        title: 'Food', status: _loading ? '…' : '${(_stats['todayCalories'] as double? ?? 0.0).toInt()} kcal today',
+        icon: Icons.restaurant_rounded, accentA: NudgeTokens.foodA, accentB: NudgeTokens.foodB,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const FoodScreen())).then((_) => _fetchStats()),
+      ));
+    }
+    if (AppStorage.enabledModules.contains('health')) {
+      final steps = (_stats['steps'] as num?)?.toInt() ?? 0;
+      healthCards.add(_ModuleCard(
+        title: 'Cardio Coach', status: _loading ? '…' : (steps > 0 ? '$steps steps' : 'No sessions'),
+        icon: Icons.route_rounded, accentA: NudgeTokens.purple, accentB: NudgeTokens.purple,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RunningCoachListScreen())).then((_) => _fetchStats()),
+      ));
+    }
+    if (healthCards.isNotEmpty) {
+      slivers.add(_sectionLabel('HEALTH & FITNESS'));
+      slivers.add(_moduleGrid(healthCards));
+    }
+    final prodCards = <Widget>[];
+    if (AppStorage.enabledModules.contains('pomodoro')) {
+      prodCards.add(_ModuleCard(
+        title: 'Pomodoro', status: _loading ? '…' : '${((_stats['pomMinutes'] as num? ?? 0) / 60).toStringAsFixed(1)} hrs today',
+        icon: Icons.timer_rounded, accentA: NudgeTokens.pomA, accentB: NudgeTokens.pomB,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PomodoroScreen())).then((_) => _fetchStats()),
+      ));
+    }
+    if (AppStorage.enabledModules.contains('my_habits')) {
+      prodCards.add(_ModuleCard(
+        title: 'My Habits', status: _loading ? '…' : 'Daily tracker',
+        icon: Icons.checklist_rounded, accentA: NudgeTokens.purple, accentB: NudgeTokens.green,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyHabitsScreen())).then((_) => _fetchStats()),
+      ));
+    }
+    prodCards.add(_ModuleCard(
+      title: 'Day Trackers', status: 'Year progress',
+      icon: Icons.grid_view_rounded, accentA: NudgeTokens.purple.withValues(alpha: 0.3), accentB: NudgeTokens.purple,
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DayTrackerScreen())).then((_) => _fetchStats()),
+    ));
+    if (prodCards.isNotEmpty) {
+      slivers.add(_sectionLabel('PRODUCTIVITY'));
+      slivers.add(_moduleGrid(prodCards));
+    }
+    final entertainCards = <Widget>[];
+    if (AppStorage.enabledModules.contains('movies')) {
+      entertainCards.add(_ModuleCard(
+        title: 'Movies', status: _loading ? '…' : '${_stats['moviesCount'] ?? 0} this month',
+        icon: Icons.local_movies_rounded, accentA: NudgeTokens.moviesA, accentB: NudgeTokens.moviesB,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MoviesScreen())).then((_) => _fetchStats()),
+      ));
+    }
+    if (AppStorage.enabledModules.contains('books')) {
+      entertainCards.add(_ModuleCard(
+        title: 'Books', status: _loading ? '…' : '${_stats['booksCount'] ?? 0} active',
+        icon: Icons.menu_book_rounded, accentA: NudgeTokens.booksA, accentB: NudgeTokens.booksB,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BooksScreen())).then((_) => _fetchStats()),
+      ));
+    }
+    if (entertainCards.isNotEmpty) {
+      slivers.add(_sectionLabel('ENTERTAINMENT'));
+      slivers.add(_moduleGrid(entertainCards));
+    }
+    final finCards = <Widget>[];
+    if (AppStorage.enabledModules.contains('finance')) {
+      finCards.add(_ModuleCard(
+        title: 'Finance', status: _loading ? '…' : _financeStatus(),
+        icon: Icons.account_balance_wallet_rounded, accentA: NudgeTokens.finA, accentB: NudgeTokens.finB,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const FinanceScreen())).then((_) => _fetchStats()),
+      ));
+    }
+    if (AppStorage.enabledModules.contains('detox')) {
+      finCards.add(_ModuleCard(
+        title: 'Digital Wellbeing', status: 'Screen Time & Detox',
+        icon: Icons.phone_android_rounded, accentA: NudgeTokens.blue.withValues(alpha: 0.15), accentB: NudgeTokens.purple,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DigitalWellbeingScreen())).then((_) => _fetchStats()),
+      ));
+    }
+    if (finCards.isNotEmpty) {
+      slivers.add(_sectionLabel('FINANCE & WELLBEING'));
+      slivers.add(_moduleGrid(finCards));
+    }
+    return slivers;
+  }
+
+  Widget _sectionLabel(String text) => SliverPadding(
+    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+    sliver: SliverToBoxAdapter(
+      child: Text(text, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w800, color: NudgeTokens.textLow, letterSpacing: 1.2)),
+    ),
+  );
+
+  Widget _moduleGrid(List<Widget> cards) => SliverPadding(
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    sliver: SliverGrid.count(crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.05, children: cards),
+  );
 }
 
 // ── Bottom nav bar ─────────────────────────────────────────────────────────────
@@ -695,8 +640,8 @@ class _NudgeNavBar extends StatelessWidget {
                     isSelected: currentIndex == 1,
                     onTap: () => onTap(1)),
                 _NavBarItem(
-                    icon: Icons.calendar_view_week_rounded,
-                    label: 'Progress',
+                    icon: Icons.apps_rounded,
+                    label: 'Apps',
                     isSelected: currentIndex == 2,
                     onTap: () => onTap(2)),
                 _NavBarItem(
@@ -897,7 +842,310 @@ class _ModuleCard extends StatelessWidget {
   }
 }
 
-// ── Combined Activity + Coach card ────────────────────────────────────────────
+// ── AI Insights card ──────────────────────────────────────────────────────────
+
+class _AiInsightsCard extends StatefulWidget {
+  final Map<String, dynamic> stats;
+  const _AiInsightsCard({required this.stats});
+  @override
+  State<_AiInsightsCard> createState() => _AiInsightsCardState();
+}
+
+class _AiInsightsCardState extends State<_AiInsightsCard> {
+  bool _generating = false;
+
+  Future<void> _generateAndView() async {
+    setState(() => _generating = true);
+    final report = await AiAnalysisService.generateWeeklyReport();
+    if (!mounted) return;
+    setState(() => _generating = false);
+    if (report != null) {
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => _AiReportScreen(content: report, timestamp: DateTime.now().toIso8601String()),
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reports = AiAnalysisService.getSavedReports();
+    final lastReport = reports.isNotEmpty ? reports.first : null;
+    final snippet = lastReport != null
+        ? (lastReport['content'] as String).replaceAll('\n', ' ')
+        : null;
+    final preview = snippet != null && snippet.length > 160
+        ? '${snippet.substring(0, 160)}…'
+        : snippet;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [NudgeTokens.purple.withValues(alpha: 0.18), NudgeTokens.card],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: NudgeTokens.purple.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: NudgeTokens.purple.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.auto_awesome_rounded, size: 16, color: NudgeTokens.purple),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text('AI Progress Summary',
+                  style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
+            ),
+            if (_generating)
+              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: NudgeTokens.purple)),
+          ]),
+          if (preview != null) ...[
+            const SizedBox(height: 10),
+            Text(preview,
+                style: GoogleFonts.outfit(fontSize: 12, color: NudgeTokens.textMid, height: 1.5),
+                maxLines: 3, overflow: TextOverflow.ellipsis),
+          ] else ...[
+            const SizedBox(height: 8),
+            Text('Generate your weekly AI-powered health summary.',
+                style: GoogleFonts.outfit(fontSize: 12, color: NudgeTokens.textLow)),
+          ],
+          const SizedBox(height: 14),
+          Row(children: [
+            if (lastReport != null)
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => _AiReportScreen(content: lastReport['content'], timestamp: lastReport['timestamp']),
+                  )),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: NudgeTokens.purple,
+                    side: BorderSide(color: NudgeTokens.purple.withValues(alpha: 0.4)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  child: Text('View Report', style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            if (lastReport != null) const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton(
+                onPressed: _generating ? null : _generateAndView,
+                style: FilledButton.styleFrom(
+                  backgroundColor: NudgeTokens.purple,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                child: Text(_generating ? 'Generating…' : 'New Report',
+                    style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+}
+
+// ── AI Report full-screen viewer ──────────────────────────────────────────────
+
+class _AiReportScreen extends StatelessWidget {
+  final String content;
+  final String timestamp;
+  const _AiReportScreen({required this.content, required this.timestamp});
+
+  @override
+  Widget build(BuildContext context) {
+    final ts = DateTime.tryParse(timestamp);
+    final label = ts != null
+        ? '${ts.day}/${ts.month}/${ts.year} ${ts.hour.toString().padLeft(2,'0')}:${ts.minute.toString().padLeft(2,'0')}'
+        : '';
+    return Scaffold(
+      backgroundColor: NudgeTokens.bg,
+      appBar: AppBar(
+        backgroundColor: NudgeTokens.surface,
+        surfaceTintColor: Colors.transparent,
+        title: Text('AI Progress Report', style: GoogleFonts.outfit(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)),
+        bottom: label.isNotEmpty
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(20),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(label, style: GoogleFonts.outfit(fontSize: 11, color: NudgeTokens.textLow)),
+                ),
+              )
+            : null,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Text(content, style: GoogleFonts.outfit(fontSize: 14, color: NudgeTokens.textMid, height: 1.7)),
+      ),
+    );
+  }
+}
+
+// ── Weekly snapshot ───────────────────────────────────────────────────────────
+
+class _WeeklySnapshot extends StatefulWidget {
+  final Map<String, dynamic> stats;
+  const _WeeklySnapshot({required this.stats});
+  @override
+  State<_WeeklySnapshot> createState() => _WeeklySnapshotState();
+}
+
+class _WeeklySnapshotState extends State<_WeeklySnapshot> {
+  List<Map<String, dynamic>> _days = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final box = await AppStorage.getGymBox();
+    final history = (box.get('health_history', defaultValue: <dynamic>[]) as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+
+    final now = DateTime.now();
+    final days = List.generate(7, (i) {
+      final d = now.subtract(Duration(days: 6 - i));
+      final iso = '${d.year}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';
+      final entry = history.firstWhere((h) => h['dayIso'] == iso, orElse: () => <String, dynamic>{});
+      return {
+        'iso': iso,
+        'label': _dayLabel(d),
+        'isToday': i == 6,
+        'gym': (entry['gymSets'] as num?)?.toInt() ?? 0,
+        'food': (entry['foodCalories'] as num?)?.toDouble() ?? 0.0,
+        'focus': (entry['pomMinutes'] as num?)?.toDouble() ?? 0.0,
+        'steps': (entry['steps'] as num?)?.toInt() ?? 0,
+      };
+    });
+
+    // Today's live data supplements history
+    if (days.isNotEmpty) {
+      final today = days.last;
+      today['gym'] = (widget.stats['gymSetsToday'] as num?)?.toInt() ?? (today['gym'] as int);
+      today['food'] = (widget.stats['caloriesIn'] as num?)?.toDouble() ?? (today['food'] as double);
+      today['focus'] = (widget.stats['pomMinutes'] as num?)?.toDouble() ?? (today['focus'] as double);
+      today['steps'] = (widget.stats['steps'] as num?)?.toInt() ?? (today['steps'] as int);
+    }
+
+    if (mounted) setState(() { _days = days; _loading = false; });
+  }
+
+  String _dayLabel(DateTime d) {
+    const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    return labels[d.weekday - 1];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: NudgeTokens.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: NudgeTokens.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.calendar_view_week_rounded, size: 15, color: NudgeTokens.textLow),
+            const SizedBox(width: 8),
+            Text('THIS WEEK', style: GoogleFonts.outfit(
+                fontSize: 11, fontWeight: FontWeight.w800, color: NudgeTokens.textLow, letterSpacing: 1.1)),
+          ]),
+          const SizedBox(height: 16),
+          if (_loading)
+            const Center(child: SizedBox(width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: NudgeTokens.textLow)))
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: _days.map((day) => _DayColumn(day: day)).toList(),
+            ),
+          const SizedBox(height: 14),
+          // Legend
+          Row(children: [
+            _Dot(color: NudgeTokens.gymB), const SizedBox(width: 4),
+            Text('Gym', style: GoogleFonts.outfit(fontSize: 10, color: NudgeTokens.textLow)),
+            const SizedBox(width: 12),
+            _Dot(color: NudgeTokens.foodB), const SizedBox(width: 4),
+            Text('Food', style: GoogleFonts.outfit(fontSize: 10, color: NudgeTokens.textLow)),
+            const SizedBox(width: 12),
+            _Dot(color: NudgeTokens.pomB), const SizedBox(width: 4),
+            Text('Focus', style: GoogleFonts.outfit(fontSize: 10, color: NudgeTokens.textLow)),
+            const SizedBox(width: 12),
+            _Dot(color: NudgeTokens.green), const SizedBox(width: 4),
+            Text('Steps', style: GoogleFonts.outfit(fontSize: 10, color: NudgeTokens.textLow)),
+          ]),
+        ],
+      ),
+    );
+  }
+}
+
+class _DayColumn extends StatelessWidget {
+  final Map<String, dynamic> day;
+  const _DayColumn({required this.day});
+
+  @override
+  Widget build(BuildContext context) {
+    final isToday = day['isToday'] as bool;
+    final gym = (day['gym'] as int) > 0;
+    final food = (day['food'] as double) > 200;
+    final focus = (day['focus'] as double) > 10;
+    final steps = (day['steps'] as int) > 2000;
+
+    return Column(
+      children: [
+        _Dot(color: gym ? NudgeTokens.gymB : NudgeTokens.border),
+        const SizedBox(height: 3),
+        _Dot(color: food ? NudgeTokens.foodB : NudgeTokens.border),
+        const SizedBox(height: 3),
+        _Dot(color: focus ? NudgeTokens.pomB : NudgeTokens.border),
+        const SizedBox(height: 3),
+        _Dot(color: steps ? NudgeTokens.green : NudgeTokens.border),
+        const SizedBox(height: 8),
+        Container(
+          width: 24,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: isToday
+              ? BoxDecoration(color: NudgeTokens.purple, borderRadius: BorderRadius.circular(6))
+              : null,
+          child: Text(day['label'] as String,
+              style: GoogleFonts.outfit(
+                  fontSize: 11,
+                  fontWeight: isToday ? FontWeight.w900 : FontWeight.w600,
+                  color: isToday ? Colors.white : NudgeTokens.textLow)),
+        ),
+      ],
+    );
+  }
+}
+
+class _Dot extends StatelessWidget {
+  final Color color;
+  const _Dot({required this.color});
+  @override
+  Widget build(BuildContext context) => Container(
+      width: 8, height: 8,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle));
+}
 
 // ── Streak chip ───────────────────────────────────────────────────────────────
 

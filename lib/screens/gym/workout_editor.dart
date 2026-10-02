@@ -44,6 +44,10 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
   late DateTime _workoutStartedAt;
   Timer? _elapsedTimer;
   String _elapsedLabel = '0:00';
+  bool _timerRunning = true;
+
+  // Change tracking
+  late String _initialStateJson;
 
   @override
   void initState() {
@@ -55,18 +59,116 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
         .toList();
     _noteCtrl.text = (init?['note'] as String?) ?? '';
     _caloriesCtrl.text = ((init?['calories'] as num?)?.toInt() ?? 0).toString();
-    _workoutStartedAt = DateTime.tryParse((init?['startedAt'] as String?) ?? '') ?? DateTime.now();
-    _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      final secs = DateTime.now().difference(_workoutStartedAt).inSeconds;
-      final h = secs ~/ 3600;
-      final m = (secs % 3600) ~/ 60;
-      final s = secs % 60;
+
+    // Default start time
+    final savedStart = init?['startedAt'] as String?;
+    DateTime start = DateTime.tryParse(savedStart ?? '') ?? DateTime.now();
+
+    // Fix "10 hour jump" — if start time is from a different day, reset it to now
+    // unless the user specifically wants to resume an old session (handled via prompt)
+    final now = DateTime.now();
+    if (init != null && start.day != now.day) {
+      // It's an old session, default to paused at 0:00 until prompt
+      _timerRunning = false;
+    }
+
+    _workoutStartedAt = start;
+    _captureInitialState();
+
+    if (init != null) {
+      // Prompt user on next frame: Workout vs Edit
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showEntryPrompt());
+    } else {
+      _startElapsedTimer();
+    }
+  }
+
+  void _captureInitialState() {
+    _initialStateJson = _getCurrentStateJson();
+  }
+
+  String _getCurrentStateJson() {
+    return '${_exercises.toString()}${_noteCtrl.text}${_caloriesCtrl.text}';
+  }
+
+  bool get _hasChanges => _initialStateJson != _getCurrentStateJson();
+
+  void _showEntryPrompt() async {
+    final mode = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: NudgeTokens.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Resume Workout?',
+            style: TextStyle(color: NudgeTokens.textHigh, fontSize: 18, fontWeight: FontWeight.w800)),
+        content: const Text(
+          'Would you like to resume the workout timer, or just edit the details?',
+          style: TextStyle(color: NudgeTokens.textMid, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'edit'),
+            child: const Text('Just Edit', style: TextStyle(color: NudgeTokens.textMid)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 'workout'),
+            style: FilledButton.styleFrom(backgroundColor: NudgeTokens.gymB, foregroundColor: NudgeTokens.gymA),
+            child: const Text('Resume Workout', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+
+    if (mode == 'workout') {
       setState(() {
-        _elapsedLabel = h > 0
-            ? '${h}h ${m.toString().padLeft(2, '0')}m'
-            : '${m}:${s.toString().padLeft(2, '0')}';
+        _timerRunning = true;
+        // If it was an old session, restart timer from NOW
+        if (_workoutStartedAt.day != DateTime.now().day) {
+          _workoutStartedAt = DateTime.now();
+        }
       });
+      _startElapsedTimer();
+    } else {
+      setState(() {
+        _timerRunning = false;
+        _updateElapsedLabel();
+      });
+    }
+  }
+
+  void _startElapsedTimer() {
+    _elapsedTimer?.cancel();
+    _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || !_timerRunning) return;
+      setState(() => _updateElapsedLabel());
+    });
+  }
+
+  void _updateElapsedLabel() {
+    final secs = DateTime.now().difference(_workoutStartedAt).inSeconds;
+    if (secs < 0) {
+      _elapsedLabel = '0:00';
+      return;
+    }
+    final h = secs ~/ 3600;
+    final m = (secs % 3600) ~/ 60;
+    final s = secs % 60;
+    _elapsedLabel = h > 0
+        ? '${h}h ${m.toString().padLeft(2, '0')}m'
+        : '${m}:${s.toString().padLeft(2, '0')}';
+  }
+
+  void _toggleTimer() {
+    setState(() {
+      _timerRunning = !_timerRunning;
+      if (_timerRunning) {
+        // If resuming a paused timer from a long time ago, maybe we should offer to reset?
+        // For now just resume.
+        if (_elapsedTimer == null || !_elapsedTimer!.isActive) {
+          _startElapsedTimer();
+        }
+      }
     });
   }
 
@@ -283,10 +385,13 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
 
   // ─── Data mutations ──────────────────────────────────────────────────────
 
-  /// Toggle a set's done state; starts rest timer when marking done.
-  void _toggleSetDone(int exIdx, int setIdx) {
+  /// Toggle a set's done state; also commits current reps/weight atomically.
+  /// Starts rest timer when marking done.
+  void _toggleSetDone(int exIdx, int setIdx, int reps, double weight) {
     final sets = List<dynamic>.from(_exercises[exIdx]['sets'] as List);
     final s = Map<String, dynamic>.from(sets[setIdx] as Map);
+    s['reps'] = reps;
+    s['weight'] = weight;
     final wasDone = s['done'] as bool? ?? false;
     s['done'] = !wasDone;
     sets[setIdx] = s;
@@ -294,6 +399,16 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
     ex['sets'] = sets;
     setState(() => _exercises[exIdx] = ex);
     if (!wasDone) _startRest();
+  }
+
+  /// Resets a set's done flag to false (called when user edits a completed set).
+  void _resetSetDone(int exIdx, int setIdx) {
+    final sets = _exercises[exIdx]['sets'] as List;
+    final s = Map<String, dynamic>.from(sets[setIdx] as Map);
+    if (s['done'] != true) return;
+    s['done'] = false;
+    sets[setIdx] = s;
+    setState(() {});
   }
 
   /// Mutates exercise/set data in-place without setState (called from text
@@ -410,6 +525,10 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
   // ─── Save / Delete ───────────────────────────────────────────────────────
 
   Future<void> _confirmDiscard() async {
+    if (!_hasChanges) {
+      Navigator.of(context).pop();
+      return;
+    }
     final discard = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -668,7 +787,9 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
                   onFinish: _done,
                   onImport: _importFromText,
                   onStop: _stopWorkout,
+                  onToggleTimer: _toggleTimer,
                   elapsedLabel: _elapsedLabel,
+                  timerRunning: _timerRunning,
                 ),
                 // Rest timer appears inline below AppBar — no overlap with content
                 AnimatedSize(
@@ -710,8 +831,9 @@ class _WorkoutEditorPageState extends State<WorkoutEditorPage> {
                             onRemove: () => _removeExercise(idx),
                             onAddSet: () => _addSet(idx),
                             onRemoveSet: (si) => _removeSet(idx, si),
-                            onToggleDone: (si) =>
-                                _toggleSetDone(idx, si),
+                            onToggleDone: (si, reps, weight) =>
+                                _toggleSetDone(idx, si, reps, weight),
+                            onSetEdited: (si) => _resetSetDone(idx, si),
                             onUpdateSet: (si,
                                     {int? reps, double? weight}) =>
                                 _updateSetValue(idx, si,
@@ -815,7 +937,9 @@ class _AppBar extends StatelessWidget {
   final VoidCallback onFinish;
   final VoidCallback onImport;
   final VoidCallback onStop;
+  final VoidCallback onToggleTimer;
   final String elapsedLabel;
+  final bool timerRunning;
 
   const _AppBar({
     required this.dayLabel,
@@ -826,7 +950,9 @@ class _AppBar extends StatelessWidget {
     required this.onFinish,
     required this.onImport,
     required this.onStop,
+    required this.onToggleTimer,
     required this.elapsedLabel,
+    required this.timerRunning,
   });
 
   @override
@@ -883,24 +1009,38 @@ class _AppBar extends StatelessWidget {
                         ),
                       ],
                       const SizedBox(height: 2),
-                      GestureDetector(
-                        onTap: onStop,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              elapsedLabel,
-                              style: const TextStyle(
-                                color: NudgeTokens.gymB,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          GestureDetector(
+                            onTap: onToggleTimer,
+                            child: Icon(
+                              timerRunning ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                              color: NudgeTokens.gymB,
+                              size: 16,
                             ),
-                            const SizedBox(width: 4),
-                            const Icon(Icons.stop_circle_rounded,
-                                color: NudgeTokens.gymB, size: 13),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: onStop,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  elapsedLabel,
+                                  style: const TextStyle(
+                                    color: NudgeTokens.gymB,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.stop_circle_rounded,
+                                    color: NudgeTokens.gymB, size: 13),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -945,7 +1085,8 @@ class _ExerciseCard extends StatefulWidget {
   final VoidCallback onRemove;
   final VoidCallback onAddSet;
   final void Function(int) onRemoveSet;
-  final void Function(int) onToggleDone;
+  final void Function(int si, int reps, double weight) onToggleDone;
+  final void Function(int si) onSetEdited;
   final void Function(int, {int? reps, double? weight}) onUpdateSet;
   final VoidCallback? onRenameTap;
   final VoidCallback onToggleTimer;
@@ -962,6 +1103,7 @@ class _ExerciseCard extends StatefulWidget {
     required this.onAddSet,
     required this.onRemoveSet,
     required this.onToggleDone,
+    required this.onSetEdited,
     required this.onUpdateSet,
     this.onRenameTap,
     required this.onToggleTimer,
@@ -1297,18 +1439,24 @@ class _ExerciseCardState extends State<_ExerciseCard> {
               repsCtrl: _repsCtrl[si],
               weightCtrl: _weightCtrl[si],
               canRemove: canRemove,
-              onToggleDone: () => widget.onToggleDone(si),
+              onToggleDone: () {
+                final r = int.tryParse(_repsCtrl[si].text) ?? 0;
+                final w = double.tryParse(_weightCtrl[si].text.replaceAll(',', '.')) ?? 0.0;
+                widget.onToggleDone(si, r, w);
+              },
               onRemove: () => widget.onRemoveSet(si),
               onRepsChanged: (v) {
                 final n = int.tryParse(v);
                 if (n != null) {
                   widget.onUpdateSet(si, reps: n.clamp(0, 999));
+                  if (done) widget.onSetEdited(si);
                 }
               },
               onWeightChanged: (v) {
                 final n = double.tryParse(v.replaceAll(',', '.'));
                 if (n != null) {
                   widget.onUpdateSet(si, weight: n.clamp(0.0, 999.0));
+                  if (done) widget.onSetEdited(si);
                 }
               },
             ),

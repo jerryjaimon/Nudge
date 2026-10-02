@@ -53,6 +53,8 @@ class DetoxService {
   Timer? _scheduleTimer;
   bool _isCurrentlyBlocking = false;
 
+  bool get isCurrentlyBlocking => _isCurrentlyBlocking;
+
   Future<void> init() async {
     _startScheduleChecker();
   }

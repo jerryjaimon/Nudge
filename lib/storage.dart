@@ -12,6 +12,9 @@ class AppStorage {
   static const String foodBoxName = 'food_box';
   static const String foodLibraryBoxName = 'food_library_box';
   static const String aiLogsBoxName = 'ai_logs_box';
+  static const String categoryBudgetBoxName = 'category_budgets_box';
+  static const String savingsJarBoxName = 'savings_jars_box';
+  static const String jarTransferBoxName = 'jar_transfers_box';
 
   static Box? _moviesBox;
   static Box? _booksBox;
@@ -23,6 +26,9 @@ class AppStorage {
   static Box? _foodBox;
   static Box? _foodLibraryBox;
   static Box? _aiLogsBox;
+  static Box<dynamic>? _categoryBudgetBox;
+  static Box<dynamic>? _savingsJarBox;
+  static Box<dynamic>? _jarTransferBox;
 
   static Box get moviesBox => _moviesBox ??= Hive.box(moviesBoxName);
   static Box get booksBox => _booksBox ??= Hive.box(booksBoxName);
@@ -34,6 +40,9 @@ class AppStorage {
   static Box get foodBox => _foodBox ??= Hive.box(foodBoxName);
   static Box get foodLibraryBox => _foodLibraryBox ??= Hive.box(foodLibraryBoxName);
   static Box get aiLogsBox => _aiLogsBox ??= Hive.box(aiLogsBoxName);
+  static Box get categoryBudgetBox => _categoryBudgetBox ??= Hive.box(categoryBudgetBoxName);
+  static Box get savingsJarBox => _savingsJarBox ??= Hive.box(savingsJarBoxName);
+  static Box get jarTransferBox => _jarTransferBox ??= Hive.box(jarTransferBoxName);
 
   static Future<Box> getMoviesBox() async {
     if (_moviesBox != null) return _moviesBox!;
@@ -106,6 +115,9 @@ class AppStorage {
     _foodBox = await Hive.openBox(foodBoxName);
     _foodLibraryBox = await Hive.openBox(foodLibraryBoxName);
     _aiLogsBox = await Hive.openBox(aiLogsBoxName);
+    _categoryBudgetBox = await Hive.openBox(categoryBudgetBoxName);
+    _savingsJarBox = await Hive.openBox(savingsJarBoxName);
+    _jarTransferBox = await Hive.openBox(jarTransferBoxName);
 
     // Movies
     if (!_moviesBox!.containsKey('movies')) {

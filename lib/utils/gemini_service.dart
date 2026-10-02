@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_generative_ai/google_generative_ai.dart' as gai;
 import '../storage.dart';
+import 'ai_data_sanitiser.dart';
 
 /// Whether to use Google Search grounding (needed for movie auto-fill).
 /// Pass this as [typeOverride] when grounded search is required.
@@ -44,12 +45,28 @@ class GeminiService {
     final apiKey = AppStorage.activeGeminiKey;
     if (apiKey.isEmpty) return null;
 
+    // ── Sanitise prompt before sending ──────────────────────────────────────
+    final sanitisedPrompt = AiDataSanitiser.sanitisePrompt(prompt);
+
+    // ── Log every AI request ─────────────────────────────────────────────────
+    final model = storedModel;
+    final preview = sanitisedPrompt.length > 120
+        ? '${sanitisedPrompt.substring(0, 120)}…'
+        : sanitisedPrompt;
+    debugPrint('[GeminiService] REQUEST model=$model '
+        'grounded=${typeOverride == GeminiGenType.grounded} '
+        'json=$jsonMode images=${images?.length ?? 0}\n'
+        'prompt_preview: $preview');
+    AppStorage.logAiError(
+        '[REQUEST ${DateTime.now().toIso8601String()}] model=$model '
+        'prompt_preview: $preview');
+
     final grounded = (typeOverride ?? GeminiGenType.standard) == GeminiGenType.grounded;
 
     // Grounded always uses REST — SDK path is for standard calls only.
     if (grounded || !useSdk) {
       return _restGenerate(
-        prompt: prompt,
+        prompt: sanitisedPrompt,
         images: images,
         jsonMode: jsonMode,
         grounded: grounded,
@@ -57,7 +74,7 @@ class GeminiService {
       );
     } else {
       return _sdkGenerate(
-        prompt: prompt,
+        prompt: sanitisedPrompt,
         images: images,
         jsonMode: jsonMode,
         apiKey: apiKey,

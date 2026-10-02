@@ -13,6 +13,9 @@ class HabitCard extends StatelessWidget {
   final VoidCallback onMinus;
   final VoidCallback onPlus;
 
+  final bool isBookmarked;
+  final VoidCallback? onToggleBookmark;
+
   const HabitCard({
     super.key,
     required this.title,
@@ -24,6 +27,8 @@ class HabitCard extends StatelessWidget {
     required this.onTapEdit,
     required this.onMinus,
     required this.onPlus,
+    this.isBookmarked = false,
+    this.onToggleBookmark,
   });
 
   @override
@@ -117,22 +122,39 @@ class HabitCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Count badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      color: accentColor.withValues(alpha: 0.12),
-                      border: Border.all(color: accentColor.withValues(alpha: 0.22)),
-                    ),
-                    child: Text(
-                      '$count',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: accentColor,
+                  // Count badge & Bookmark
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (onToggleBookmark != null)
+                        GestureDetector(
+                          onTap: onToggleBookmark,
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Icon(
+                              isBookmarked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                              size: 18,
+                              color: isBookmarked ? Colors.redAccent : NudgeTokens.textLow,
+                            ),
+                          ),
+                        ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          color: accentColor.withValues(alpha: 0.12),
+                          border: Border.all(color: accentColor.withValues(alpha: 0.22)),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: accentColor,
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ],
               ),

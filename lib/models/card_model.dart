@@ -18,6 +18,9 @@ class TrackerCard extends HiveObject {
   @HiveField(15)
   int? iconCodePoint; // Material Icon code point
 
+  @HiveField(16)
+  bool isBookmarked;
+
   @HiveField(3)
   final CardType type;
 
@@ -71,6 +74,7 @@ class TrackerCard extends HiveObject {
     this.durationSeconds = 0,
     this.metadata = '',
     this.iconCodePoint,
+    this.isBookmarked = false,
   }) : history = history ?? [],
        weightHistory = weightHistory ?? [];
 

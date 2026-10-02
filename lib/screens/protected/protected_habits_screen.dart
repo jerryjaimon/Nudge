@@ -9,6 +9,8 @@ import 'habit_editor_sheet.dart';
 import 'habit_detail_screen.dart';
 import 'package:nudge/utils/nudge_theme_extension.dart';
 import '../../utils/notification_service.dart';
+import 'bookmarks_screen.dart';
+import '../../utils/ui_utils.dart';
 
 class ProtectedHabitsScreen extends StatefulWidget {
   const ProtectedHabitsScreen({super.key});
@@ -118,6 +120,24 @@ class _ProtectedHabitsScreenState extends State<ProtectedHabitsScreen> {
     setState(() {});
   }
 
+  Future<void> _toggleBookmark(String habitId) async {
+    final b = _box;
+    if (b == null) return;
+    final list = _habits().map((h) => Map<String, dynamic>.from(h)).toList();
+    final idx = list.indexWhere((h) => h['id']?.toString() == habitId);
+    if (idx >= 0) {
+      list[idx]['isBookmarked'] = !(list[idx]['isBookmarked'] ?? false);
+      await b.put('habits', list);
+      setState(() {});
+    }
+  }
+
+  void _openBookmarks() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const BookmarksScreen(),
+    )).then((_) => setState((){}));
+  }
+
   List<int> _last7Counts(String habitId) {
     final out = <int>[];
     for (int i = 6; i >= 0; i--) {
@@ -133,7 +153,7 @@ class _ProtectedHabitsScreenState extends State<ProtectedHabitsScreen> {
       isScrollControlled: true,
       backgroundColor: NudgeTokens.elevated,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.all(Radius.circular(24)),
       ),
       builder: (_) => HabitEditorSheet(initial: initial),
     );
@@ -150,7 +170,9 @@ class _ProtectedHabitsScreenState extends State<ProtectedHabitsScreen> {
       try {
         final intId = int.parse(id.substring(id.length - 8));
         await NotificationService().cancelReminder(intId);
-      } catch (_) {}
+      } catch (e) {
+        if (mounted) UIUtils.showSnackBar(context, UIUtils.sanitizeError(e), isError: true);
+      }
 
       list.removeWhere((h) => h['id']?.toString() == id);
       await b.put('habits', list);
@@ -175,7 +197,9 @@ class _ProtectedHabitsScreenState extends State<ProtectedHabitsScreen> {
       } else {
         await NotificationService().cancelReminder(intId);
       }
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) UIUtils.showSnackBar(context, UIUtils.sanitizeError(e), isError: true);
+    }
 
     final idx = list.indexWhere((h) => h['id']?.toString() == id);
     if (idx >= 0) {
@@ -231,6 +255,12 @@ class _ProtectedHabitsScreenState extends State<ProtectedHabitsScreen> {
             ),
             const SizedBox(width: 10),
             const Text('Habits'),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.favorite_rounded, color: Colors.redAccent, size: 22),
+              onPressed: _openBookmarks,
+              tooltip: 'Bookmarks',
+            ),
           ],
         ),
         bottom: PreferredSize(
@@ -282,6 +312,8 @@ class _ProtectedHabitsScreenState extends State<ProtectedHabitsScreen> {
                     last7: last7,
                     type: type,
                     target: target,
+                    isBookmarked: h['isBookmarked'] ?? false,
+                    onToggleBookmark: () => _toggleBookmark(id),
                     onTapEdit: () => _openAddHabit(initial: h),
                     onMinus: () =>
                         _setCountForDay(id, dayIso, (current - 1).clamp(0, 999999)),

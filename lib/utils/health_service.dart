@@ -289,11 +289,16 @@ class HealthService {
         }
       }
 
-      // ── CALORIES: max across all sources so wearable direct data is never lost ──
-      if (grouped.isNotEmpty) {
+      // ── CALORIES: prioritize best source, fallback to max ──
+      final String? bestCalSource = _findBestSourceByPriority(grouped, metric: 'calories');
+      if (bestCalSource != null) {
+        finalCal = grouped[bestCalSource]!['calories'] ?? 0.0;
+        trace('Using priority calorie source: $bestCalSource ($finalCal kcal)');
+      } else if (grouped.isNotEmpty) {
         finalCal = grouped.values
             .map((v) => v['calories'] ?? 0.0)
             .fold(0.0, math.max);
+        trace('No priority calorie source found, using max: $finalCal kcal');
       }
       if (grouped.isNotEmpty) {
         if (finalDist == 0) {
@@ -724,20 +729,23 @@ class HealthService {
     }
   }
 
-  /// Returns the highest-priority enabled source that has step data.
-  static String? _findBestSourceByPriority(Map<String, Map<String, double>> grouped) {
-    // User-pinned source wins unconditionally
-    final pinned = getPinnedSource();
-    if (pinned != null && pinned != 'Aggregated' &&
-        grouped.containsKey(pinned) && (grouped[pinned]?['steps'] ?? 0) > 0) {
-      return pinned;
+  /// Returns the highest-priority enabled source that has data for [metric].
+  static String? _findBestSourceByPriority(Map<String, Map<String, double>> grouped, {String metric = 'steps'}) {
+    // User-pinned source wins unconditionally for steps
+    if (metric == 'steps') {
+      final pinned = getPinnedSource();
+      if (pinned != null && pinned != 'Aggregated' &&
+          grouped.containsKey(pinned) && (grouped[pinned]?[metric] ?? 0) > 0) {
+        return pinned;
+      }
     }
+    
     final priority = getSourcePriority();
     final disabled = getDisabledSources();
     for (final cat in priority) {
       if (disabled.contains(cat)) continue;
       for (final src in grouped.keys) {
-        if (sourceCategory(src) == cat && (grouped[src]?['steps'] ?? 0) > 0) {
+        if (sourceCategory(src) == cat && (grouped[src]?[metric] ?? 0) > 0) {
           return src;
         }
       }

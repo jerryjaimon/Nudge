@@ -31,6 +31,7 @@ class HabitDetailScreen extends StatelessWidget {
     final name = (habit['name'] as String?) ?? 'Habit';
     final type = (habit['type'] as String?) ?? 'build';
     final target = (habit['target'] as int?) ?? 1;
+    final iconCode = (habit['iconCode'] is int) ? (habit['iconCode'] as int) : Icons.check_rounded.codePoint;
     final isQuit = type == 'quit';
 
     final today = _onlyDay(DateTime.now());
@@ -43,16 +44,14 @@ class HabitDetailScreen extends StatelessWidget {
     }
 
     final maxC = counts.reduce((a, b) => a > b ? a : b);
-    double chartMax = (maxC > target ? maxC : target) * 1.2;
-    if (chartMax == 0) chartMax = 5.0; // buffer
+    double chartMax = (maxC > target ? maxC : target).toDouble();
+    chartMax = chartMax == 0 ? 5.0 : chartMax * 1.25;
 
     // stats
     int currentStreak = 0;
     int bestStreak = 0;
     int totalSuccess = 0;
     
-    // calculate streaks
-    // for quit, success means count <= target (and normally we only consider days where they logged something or we consider all passing days).
     int tempStreak = 0;
     for (final c in counts) {
       final success = isQuit ? (c <= target) : (c >= target);
@@ -65,140 +64,242 @@ class HabitDetailScreen extends StatelessWidget {
       }
     }
     
-    // trace backward for current streak
     for (int i = counts.length - 1; i >= 0; i--) {
       final c = counts[i];
       final success = isQuit ? (c <= target) : (c >= target);
       if (success) {
         currentStreak++;
       } else {
-        // if today is not a success yet, allow it (don't break streak if they just haven't logged today yet)
-        if (i == counts.length - 1 && c == 0 && !isQuit) {
-           continue; 
-        }
+        if (i == counts.length - 1 && c == 0 && !isQuit) continue; 
         break;
       }
     }
 
     final successRate = (totalSuccess / 30.0) * 100;
+    final accentColor = isQuit ? Colors.redAccent : NudgeTokens.blue;
 
     return Scaffold(
-      appBar: AppBar(
-        surfaceTintColor: Colors.transparent,
-        title: Text(name),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Graphic
-          Container(
-            height: 250,
-            padding: const EdgeInsets.fromLTRB(16, 32, 24, 16),
-            decoration: BoxDecoration(
-              color: NudgeTokens.card,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: NudgeTokens.border),
+      backgroundColor: NudgeTokens.bg,
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 180,
+            pinned: true,
+            stretch: true,
+            backgroundColor: NudgeTokens.bg,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+              onPressed: () => Navigator.pop(context),
             ),
-            child: LineChart(
-              LineChartData(
-                minY: 0,
-                maxY: chartMax == 0 ? 5 : chartMax,
-                minX: 0,
-                maxX: 29,
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: List.generate(30, (i) => FlSpot(i.toDouble(), counts[i].toDouble())),
-                    isCurved: true,
-                    color: isQuit ? Colors.redAccent : NudgeTokens.blue,
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      color: (isQuit ? Colors.redAccent : NudgeTokens.blue).withValues(alpha: 0.1),
+            flexibleSpace: FlexibleSpaceBar(
+              stretchModes: const [StretchMode.zoomBackground, StretchMode.blurBackground],
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Decorative gradient
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          accentColor.withValues(alpha: 0.15),
+                          NudgeTokens.bg,
+                        ],
+                      ),
                     ),
                   ),
-                  LineChartBarData(
-                    spots: [
-                      FlSpot(0, target.toDouble()),
-                      FlSpot(29, target.toDouble())
-                    ],
-                    isCurved: false,
-                    color: isQuit ? NudgeTokens.green : NudgeTokens.green, // target line is green
-                    barWidth: 2,
-                    dashArray: [5, 5],
-                    dotData: const FlDotData(show: false),
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: 40),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: accentColor.withValues(alpha: 0.12),
+                            border: Border.all(color: accentColor.withValues(alpha: 0.25), width: 2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: accentColor.withValues(alpha: 0.1),
+                                blurRadius: 20,
+                                spreadRadius: 5,
+                              )
+                            ],
+                          ),
+                          child: Icon(
+                            IconData(iconCode, fontFamily: 'MaterialIcons'),
+                            size: 42,
+                            color: accentColor,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          name,
+                          style: GoogleFonts.outfit(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
-                titlesData: FlTitlesData(
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 22,
-                      getTitlesWidget: (v, meta) {
-                        if (v == 0) return const Text('30d ago', style: TextStyle(fontSize: 10, color: NudgeTokens.textLow));
-                        if (v == 29) return const Text('Today', style: TextStyle(fontSize: 10, color: NudgeTokens.textLow));
-                        return const SizedBox.shrink();
-                      },
-                    ),
-                  ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 30,
-                      getTitlesWidget: (v, meta) {
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: Text(
-                            v.toInt().toString(),
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(fontSize: 10, color: NudgeTokens.textLow),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  horizontalInterval: target > 0 ? target.toDouble() : 1,
-                  getDrawingHorizontalLine: (v) => FlLine(
-                    color: NudgeTokens.border,
-                    strokeWidth: 1,
-                    dashArray: [4, 4],
-                  ),
-                ),
-                borderData: FlBorderData(show: false),
               ),
             ),
           ),
-          
-          const SizedBox(height: 24),
-          
-          Text(
-            'Analytics (Last 30 Days)',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
-          ),
-          
-          const SizedBox(height: 16),
-          
-          Row(
-            children: [
-              Expanded(child: _StatBox(label: 'Current Streak', value: '$currentStreak days', icon: Icons.local_fire_department_rounded, color: NudgeTokens.amber)),
-              const SizedBox(width: 12),
-              Expanded(child: _StatBox(label: 'Best Streak', value: '$bestStreak days', icon: Icons.emoji_events_rounded, color: NudgeTokens.textHigh)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: _StatBox(label: 'Target', value: '$target/day', icon: Icons.flag_rounded, color: NudgeTokens.blue)),
-              const SizedBox(width: 12),
-              Expanded(child: _StatBox(label: 'Success Rate', value: '${successRate.round()}%', icon: Icons.pie_chart_rounded, color: NudgeTokens.green)),
-            ],
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // -- Progress Metrics Row --
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _MetricCard(
+                          label: 'Current Streak',
+                          value: '$currentStreak',
+                          desc: 'Days',
+                          icon: Icons.local_fire_department_rounded,
+                          color: Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _MetricCard(
+                          label: 'Success Rate',
+                          value: '${successRate.round()}%',
+                          desc: 'Last 30d',
+                          icon: Icons.auto_graph_rounded,
+                          color: NudgeTokens.green,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // -- Chart Section --
+                  Text(
+                    'History Statistics',
+                    style: GoogleFonts.outfit(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: NudgeTokens.textHigh,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    height: 220,
+                    padding: const EdgeInsets.fromLTRB(12, 24, 20, 12),
+                    decoration: BoxDecoration(
+                      color: NudgeTokens.card,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: NudgeTokens.border),
+                    ),
+                    child: LineChart(
+                      LineChartData(
+                        minY: 0,
+                        maxY: chartMax,
+                        minX: 0,
+                        maxX: 29,
+                        gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: false,
+                          horizontalInterval: target > 0 ? target.toDouble() : 1,
+                          getDrawingHorizontalLine: (v) => FlLine(
+                            color: NudgeTokens.border.withValues(alpha: 0.5),
+                            strokeWidth: 1,
+                            dashArray: [8, 4],
+                          ),
+                        ),
+                        titlesData: FlTitlesData(
+                          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 32,
+                              getTitlesWidget: (v, meta) => Text(
+                                v.toInt().toString(),
+                                style: const TextStyle(fontSize: 10, color: NudgeTokens.textLow, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              getTitlesWidget: (v, meta) {
+                                if (v == 0) return const Text('30d', style: TextStyle(fontSize: 10, color: NudgeTokens.textLow));
+                                if (v == 29) return const Text('Today', style: TextStyle(fontSize: 10, color: NudgeTokens.textLow));
+                                return const SizedBox.shrink();
+                              },
+                            ),
+                          ),
+                        ),
+                        borderData: FlBorderData(show: false),
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: List.generate(30, (i) => FlSpot(i.toDouble(), counts[i].toDouble())),
+                            isCurved: true,
+                            curveSmoothness: 0.35,
+                            color: accentColor,
+                            barWidth: 4,
+                            isStrokeCapRound: true,
+                            dotData: const FlDotData(show: false),
+                            belowBarData: BarAreaData(
+                              show: true,
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  accentColor.withValues(alpha: 0.2),
+                                  accentColor.withValues(alpha: 0.0),
+                                ],
+                              ),
+                            ),
+                          ),
+                          // Target line
+                          LineChartBarData(
+                            spots: [FlSpot(0, target.toDouble()), FlSpot(29, target.toDouble())],
+                            isCurved: false,
+                            color: NudgeTokens.green.withValues(alpha: 0.5),
+                            barWidth: 2,
+                            dashArray: [10, 5],
+                            dotData: const FlDotData(show: false),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // -- Summary Stats --
+                  _StatRow(
+                    label: 'Target Goal',
+                    value: '$target ${isQuit ? "or less" : "or more"} per day',
+                    icon: Icons.track_changes_rounded,
+                    color: NudgeTokens.textMid,
+                  ),
+                  _StatRow(
+                    label: 'Best Streak',
+                    value: '$bestStreak days',
+                    icon: Icons.emoji_events_rounded,
+                    color: Colors.amber,
+                  ),
+                  _StatRow(
+                    label: 'Total Sessions',
+                    value: '${counts.where((c) => c > 0).length} of 30 days',
+                    icon: Icons.calendar_today_rounded,
+                    color: NudgeTokens.blue,
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -206,13 +307,14 @@ class HabitDetailScreen extends StatelessWidget {
   }
 }
 
-class _StatBox extends StatelessWidget {
+class _MetricCard extends StatelessWidget {
   final String label;
   final String value;
+  final String desc;
   final IconData icon;
   final Color color;
 
-  const _StatBox({required this.label, required this.value, required this.icon, required this.color});
+  const _MetricCard({required this.label, required this.value, required this.desc, required this.icon, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -220,18 +322,56 @@ class _StatBox extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: NudgeTokens.card,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(color: NudgeTokens.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 20),
+          Row(
+            children: [
+              Icon(icon, color: color, size: 16),
+              const SizedBox(width: 6),
+              Text(label, style: GoogleFonts.outfit(fontSize: 12, color: NudgeTokens.textMid, fontWeight: FontWeight.w600)),
+            ],
+          ),
           const SizedBox(height: 12),
-          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: NudgeTokens.textHigh)),
-          const SizedBox(height: 2),
-          Text(label, style: const TextStyle(fontSize: 12, color: NudgeTokens.textLow)),
+          Text(value, style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.w900, color: NudgeTokens.textHigh, letterSpacing: -1)),
+          Text(desc, style: GoogleFonts.outfit(fontSize: 11, color: NudgeTokens.textLow, fontWeight: FontWeight.w500)),
         ],
+      ),
+    );
+  }
+}
+
+class _StatRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _StatRow({required this.label, required this.value, required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: NudgeTokens.card.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: NudgeTokens.border.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 14),
+            Text(label, style: GoogleFonts.outfit(color: NudgeTokens.textMid, fontWeight: FontWeight.w600)),
+            const Spacer(),
+            Text(value, style: GoogleFonts.outfit(color: NudgeTokens.textHigh, fontWeight: FontWeight.w800)),
+          ],
+        ),
       ),
     );
   }

@@ -1,4 +1,3 @@
-// lib/screens/finance/add_expense_sheet.dart
 import 'package:flutter/material.dart';
 import '../../app.dart' show NudgeTokens;
 import '../../storage.dart';
@@ -26,11 +25,20 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   void initState() {
     super.initState();
     final init = widget.initial;
+    final budgeted = AppStorage.categoryBudgetBox.values.where((b) => !b.isArchived).toList();
+    final budgetedNames = budgeted.map((b) => b.name).toList();
+
     _categories = (AppStorage.financeBox.get('categories',
             defaultValue: <String>['Food', 'Shopping', 'Bills', 'Transport', 'General']) as List)
         .cast<String>();
-    // Ensure 'Food' is always present and is the first default
-    if (!_categories.contains('Food')) _categories.insert(0, 'Food');
+
+    // Merge and prioritize: Budgeted first (alphabetical), then others (alphabetical)
+    final others = _categories.where((c) => !budgetedNames.contains(c)).toList();
+    budgetedNames.sort();
+    others.sort();
+
+    _categories = [...budgetedNames, ...others];
+    if (!_categories.contains('General')) _categories.add('General');
 
     if (init != null) {
       final amount = (init['amount'] as num?)?.toDouble() ?? 0.0;
@@ -296,7 +304,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
               ),
               child: Row(
                 children: [
-                  Expanded(
+                   Expanded(
                     child: _TypeBtn(
                       label: 'Expense',
                       active: _isExpense,
@@ -377,7 +385,24 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                   dropdownColor: NudgeTokens.card,
                   icon: const Icon(Icons.keyboard_arrow_down_rounded, color: NudgeTokens.textLow),
                   items: [
-                    ..._categories.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 14)))),
+                    ..._categories.map((c) {
+                      final b = AppStorage.categoryBudgetBox.values.where((b) => b.name == c && !b.isArchived).firstOrNull;
+                      return DropdownMenuItem(
+                        value: c,
+                        child: Row(
+                          children: [
+                            if (b != null) ...[
+                              Container(
+                                width: 8, height: 8,
+                                decoration: BoxDecoration(shape: BoxShape.circle, color: Color(int.parse(b.colourHex.replaceFirst('#', '0xFF')))),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                            Text(c, style: const TextStyle(fontSize: 14)),
+                          ],
+                        ),
+                      );
+                    }),
                     const DropdownMenuItem(value: '__ADD_NEW__', child: Text('+ Add Category', style: TextStyle(fontSize: 14, color: NudgeTokens.finB, fontWeight: FontWeight.bold))),
                   ],
                   onChanged: (val) async {
@@ -418,7 +443,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                     Text(
                       _dateLabel(),
                       style: TextStyle(
-                        color: (Theme.of(context).extension<NudgeThemeExtension>()?.textColor ?? (Theme.of(context).extension<NudgeThemeExtension>()?.textColor ?? NudgeTokens.textHigh)),
+                        color: (Theme.of(context).extension<NudgeThemeExtension>()?.textColor ?? NudgeTokens.textHigh),
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
@@ -439,8 +464,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
               child: FilledButton(
                 onPressed: _save,
                 style: FilledButton.styleFrom(
-                  backgroundColor:
-                      _isExpense ? NudgeTokens.finB : NudgeTokens.finB,
+                  backgroundColor: NudgeTokens.finB,
                 ),
                 child: Text(isEditing ? 'Save Changes' : 'Add Expense'),
               ),

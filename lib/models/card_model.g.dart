@@ -33,13 +33,14 @@ class TrackerCardAdapter extends TypeAdapter<TrackerCard> {
       durationSeconds: fields[13] as int,
       metadata: fields[14] as String,
       iconCodePoint: fields[15] as int?,
+      isBookmarked: fields[16] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, TrackerCard obj) {
     writer
-      ..writeByte(16)
+      ..writeByte(17)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -48,6 +49,8 @@ class TrackerCardAdapter extends TypeAdapter<TrackerCard> {
       ..write(obj.emoji)
       ..writeByte(15)
       ..write(obj.iconCodePoint)
+      ..writeByte(16)
+      ..write(obj.isBookmarked)
       ..writeByte(3)
       ..write(obj.type)
       ..writeByte(4)

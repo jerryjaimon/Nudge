@@ -7,6 +7,10 @@ import 'add_expense_sheet.dart';
 import 'budget_editor_sheet.dart';
 import 'raw_notification_screen.dart';
 import 'package:nudge/utils/nudge_theme_extension.dart';
+import 'category_budget_settings_screen.dart';
+import 'category_overview_screen.dart';
+import 'savings_jar_screen.dart';
+import '../../models/category_budget.dart';
 
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
@@ -23,6 +27,12 @@ class _FinanceScreenState extends State<FinanceScreen> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _syncAll();
+    _processRollover();
+  }
+
+  Future<void> _processRollover() async {
+    final prev = DateTime(_month.year, _month.month - 1);
+    await FinanceService.processMonthlyRollover(prev.year, prev.month);
   }
 
   @override
@@ -200,8 +210,6 @@ class _FinanceScreenState extends State<FinanceScreen> with WidgetsBindingObserv
     final pct = budget > 0 ? (spent / budget).clamp(0.0, 1.0) : 0.0;
     final grouped = _grouped();
     final sortedDates = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
-    final isCurrentMonth = _month.year == DateTime.now().year &&
-        _month.month == DateTime.now().month;
 
     Color barColor;
     if (pct < 0.5) {
@@ -249,6 +257,11 @@ class _FinanceScreenState extends State<FinanceScreen> with WidgetsBindingObserv
             onPressed: () => _clearAllFinanceData(),
             icon: const Icon(Icons.delete_sweep_rounded),
             tooltip: 'Clear Data',
+          ),
+          IconButton(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CategoryBudgetSettingsScreen())),
+            icon: const Icon(Icons.category_outlined),
+            tooltip: 'Category Budgets',
           ),
           IconButton(
             onPressed: _openBudgetEditor,
@@ -433,76 +446,71 @@ class _FinanceScreenState extends State<FinanceScreen> with WidgetsBindingObserv
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    '${(pct * 100).toStringAsFixed(1)}% of budget used',
-                    style: TextStyle(
-                      color: barColor.withValues(alpha: 0.8),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                    Text(
+                      '${(pct * 100).toStringAsFixed(1)}% of budget used',
+                      style: TextStyle(
+                        color: barColor.withValues(alpha: 0.8),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
+                  ],
+                  // Overspent categories indicator
+                  if (FinanceService.getOverspentCategories(_month.year, _month.month).isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: NudgeTokens.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, color: NudgeTokens.red, size: 14),
+                          const SizedBox(width: 8),
+                          const Text('Some categories are over budget', style: TextStyle(color: NudgeTokens.red, fontSize: 10, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
-              ],
             ),
           ),
           const SizedBox(height: 20),
 
           // Category Breakdown
           if (sortedDates.isNotEmpty) ...[
-             const Padding(
-               padding: EdgeInsets.only(left: 4, bottom: 12),
-               child: Text('SPENDING BY CATEGORY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: NudgeTokens.textLow, letterSpacing: 1.5)),
-             ),
-             _CategoryBreakdown(expenses: grouped.values.expand((l) => l).toList()),
-             const SizedBox(height: 24),
-          ],
+              const Padding(
+                padding: EdgeInsets.only(left: 4, bottom: 12),
+                child: Text('SPENDING BY CATEGORY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: NudgeTokens.textLow, letterSpacing: 1.5)),
+              ),
+              _CategoryBreakdown(year: _month.year, month: _month.month),
+              const SizedBox(height: 12),
+              // Savings Jars Chip Shortcut
+              _JarShortcutChip(),
+              const SizedBox(height: 24),
+           ],
 
-          // Transaction list
-          if (sortedDates.isEmpty)
-            _EmptyFinance(
-              onAdd: () => _openAddExpense(),
-              hasBudget: budget > 0,
-            )
-          else
-            ...sortedDates.map((date) {
-              final items = grouped[date]!;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const _TransactionsScreen())),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: NudgeTokens.card,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: NudgeTokens.border),
+              ),
+              child: const Row(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      _formatDate(date, isCurrentMonth),
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: NudgeTokens.textLow,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      color: NudgeTokens.card,
-                      border: Border.all(color: NudgeTokens.border),
-                    ),
-                    child: Column(
-                      children: List.generate(items.length, (i) {
-                        final item = items[i];
-                        final isLast = i == items.length - 1;
-                        return _TransactionRow(
-                          item: item,
-                          isLast: isLast,
-                          onTap: () => _openAddExpense(initial: item),
-                        );
-                      }),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
+                  Icon(Icons.receipt_long_rounded, color: NudgeTokens.finB, size: 20),
+                  SizedBox(width: 12),
+                  Expanded(child: Text('All Transactions', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14))),
+                  Icon(Icons.chevron_right_rounded, color: NudgeTokens.textLow),
                 ],
-              );
-            }),
+              ),
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -531,30 +539,31 @@ class _FinanceScreenState extends State<FinanceScreen> with WidgetsBindingObserv
     return '£${amount.toStringAsFixed(2)}';
   }
 
-  String _formatDate(String iso, bool isCurrentMonth) {
-    try {
-      final parts = iso.split('-');
-      if (parts.length < 3) return iso;
-      final d = DateTime(
-          int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final yesterday = today.subtract(const Duration(days: 1));
-      final day = DateTime(d.year, d.month, d.day);
-      if (day == today) return 'TODAY';
-      if (day == yesterday) return 'YESTERDAY';
-      const months = [
-        'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-        'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
-      ];
-      return '${d.day} ${months[d.month - 1]}';
-    } catch (_) {
-      return iso;
-    }
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+String _formatDate(String iso, bool isCurrentMonth) {
+  try {
+    final parts = iso.split('-');
+    if (parts.length < 3) return iso;
+    final d = DateTime(
+        int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final day = DateTime(d.year, d.month, d.day);
+    if (day == today) return 'TODAY';
+    if (day == yesterday) return 'YESTERDAY';
+    const months = [
+      'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+      'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+    ];
+    return '${d.day} ${months[d.month - 1]}';
+  } catch (_) {
+    return iso;
+  }
+}
 
 class _NavBtn extends StatelessWidget {
   final IconData icon;
@@ -754,61 +763,375 @@ class _EmptyFinance extends StatelessWidget {
 }
 
 class _CategoryBreakdown extends StatelessWidget {
-  final List<Map<String, dynamic>> expenses;
-  const _CategoryBreakdown({required this.expenses});
+  final int year;
+  final int month;
+  const _CategoryBreakdown({required this.year, required this.month});
 
   @override
   Widget build(BuildContext context) {
-    final map = <String, double>{};
-    for (var e in expenses) {
-      final a = (e['amount'] as num?)?.toDouble() ?? 0.0;
-      if (a < 0) { // expense
-        final c = (e['category'] as String?) ?? 'General';
-        map[c] = (map[c] ?? 0.0) - a; // add positive magnitude
-      }
-    }
-    if (map.isEmpty) return const SizedBox();
+    final spending = FinanceService.getSpendingByCategory(year, month);
+    final budgets = AppStorage.categoryBudgetBox.values.where((b) => !b.isArchived).toList();
+    
+    // Fallback: If no budgets set, show top spending categories from transactions
+    if (budgets.isEmpty) {
+        final sorted = spending.entries.toList()..sort((a,b) => b.value.compareTo(a.value));
+        final total = sorted.fold<double>(0.0, (s, e) => s + e.value);
+        if (total == 0) return const SizedBox();
 
-    final sorted = map.entries.toList()..sort((a,b) => b.value.compareTo(a.value));
-    final total = sorted.fold<double>(0.0, (s, e) => s + e.value);
+        return Column(
+          children: sorted.take(5).map((e) {
+            final pct = total > 0 ? (e.value / total) : 0.0;
+            return _SimpleBreakdownRow(name: e.key, amount: e.value, pct: pct);
+          }).toList(),
+        );
+    }
 
     return Column(
-      children: sorted.map((e) {
-        final pct = total > 0 ? (e.value / total) : 0.0;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Row(
-            children: [
-              Expanded(
-                flex: 3, 
-                child: Text(e.key, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: NudgeTokens.textMid), maxLines: 1, overflow: TextOverflow.ellipsis)
-              ),
-              Expanded(
-                flex: 5,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: pct,
-                    minHeight: 6,
-                    backgroundColor: NudgeTokens.card,
-                    valueColor: const AlwaysStoppedAnimation(NudgeTokens.finB),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 60,
-                child: Text('£${e.value.toStringAsFixed(0)}', textAlign: TextAlign.right, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: (Theme.of(context).extension<NudgeThemeExtension>()?.textColor ?? (Theme.of(context).extension<NudgeThemeExtension>()?.textColor ?? NudgeTokens.textHigh)))),
-              ),
-            ],
-          ),
+      children: budgets.map((b) {
+        final spent = spending[b.name] ?? 0.0;
+        final pct = b.monthlyLimit > 0 ? (spent / b.monthlyLimit).clamp(0.0, 1.0) : 0.0;
+        final pace = FinanceService.getCategoryPace(b.name, year, month);
+
+        return _BudgetBreakdownRow(
+          budget: b,
+          spent: spent,
+          pct: pct,
+          pace: pace,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CategoryOverviewScreen(category: b))),
         );
       }).toList(),
     );
   }
 }
 
+class _BudgetBreakdownRow extends StatelessWidget {
+  final CategoryBudget budget;
+  final double spent;
+  final double pct;
+  final String pace;
+  final VoidCallback onTap;
+
+  const _BudgetBreakdownRow({required this.budget, required this.spent, required this.pct, required this.pace, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final paceColor = pace == 'over' ? NudgeTokens.red : (pace == 'at_risk' ? NudgeTokens.amber : NudgeTokens.green);
+    final barColor = _hexToColor(budget.colourHex);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Text(budget.icon, style: const TextStyle(fontSize: 16)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(budget.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(4), color: paceColor.withValues(alpha: 0.1)),
+                  child: Text(pace.replaceAll('_', ' ').toUpperCase(), style: TextStyle(color: paceColor, fontSize: 8, fontWeight: FontWeight.w900)),
+                ),
+                const SizedBox(width: 12),
+                Text('£${spent.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: pct,
+                minHeight: 5,
+                backgroundColor: NudgeTokens.elevated,
+                valueColor: AlwaysStoppedAnimation(barColor),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _hexToColor(String hex) {
+    try {
+      return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+    } catch (_) {
+      return NudgeTokens.blue;
+    }
+  }
+}
+
+class _SimpleBreakdownRow extends StatelessWidget {
+  final String name;
+  final double amount;
+  final double pct;
+  const _SimpleBreakdownRow({required this.name, required this.amount, required this.pct});
+
+  @override
+  Widget build(BuildContext context) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          children: [
+            Expanded(flex: 3, child: Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: NudgeTokens.textMid), maxLines: 1, overflow: TextOverflow.ellipsis)),
+            Expanded(
+              flex: 5,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: pct,
+                  minHeight: 6,
+                  backgroundColor: NudgeTokens.card,
+                  valueColor: const AlwaysStoppedAnimation(NudgeTokens.finB),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 60,
+              child: Text('£${amount.toStringAsFixed(0)}', textAlign: TextAlign.right, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: (Theme.of(context).extension<NudgeThemeExtension>()?.textColor ?? NudgeTokens.textHigh))),
+            ),
+          ],
+        ),
+      );
+  }
+}
+
+class _JarShortcutChip extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final hasJars = AppStorage.savingsJarBox.values.any((j) => j.balance > 0);
+    if (!hasJars) return const SizedBox();
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ActionChip(
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SavingsJarScreen())),
+        backgroundColor: NudgeTokens.finB.withValues(alpha: 0.1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100), side: BorderSide(color: NudgeTokens.finB.withValues(alpha: 0.2))),
+        avatar: const Text('🍯', style: TextStyle(fontSize: 14)),
+        label: const Text('View Savings Jars', style: TextStyle(color: NudgeTokens.finB, fontWeight: FontWeight.w800, fontSize: 11)),
+      ),
+    );
+  }
+}
+
 // ─── Data source settings sheet ───────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TransactionsScreen extends StatefulWidget {
+  const _TransactionsScreen();
+
+  @override
+  State<_TransactionsScreen> createState() => _TransactionsScreenState();
+}
+
+class _TransactionsScreenState extends State<_TransactionsScreen> {
+  DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
+
+  String get _monthKey =>
+      '${_month.year}-${_month.month.toString().padLeft(2, '0')}';
+
+  String _monthLabel() {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    return '${months[_month.month - 1]} ${_month.year}';
+  }
+
+  void _bumpMonth(int delta) {
+    setState(() {
+      _month = DateTime(_month.year, _month.month + delta);
+    });
+  }
+
+  List<Map<String, dynamic>> _allExpenses() {
+    final raw = AppStorage.financeBox.get('expenses', defaultValue: <dynamic>[]) as List;
+    return raw.map((e) => (e as Map).cast<String, dynamic>()).toList();
+  }
+
+  List<Map<String, dynamic>> _expenses() {
+    final all = _allExpenses();
+    return all
+        .where((e) => (e['date'] as String? ?? '').startsWith(_monthKey))
+        .toList()
+      ..sort((a, b) =>
+          (b['date'] as String? ?? '').compareTo(a['date'] as String? ?? ''));
+  }
+
+  double _budget() {
+    final budgets = AppStorage.financeBox
+        .get('budgets', defaultValue: <String, dynamic>{}) as Map;
+    final v = budgets[_monthKey];
+    return (v is num) ? v.toDouble() : 0.0;
+  }
+
+  Map<String, List<Map<String, dynamic>>> _grouped() {
+    final expenses = _expenses();
+    final out = <String, List<Map<String, dynamic>>>{};
+    for (final e in expenses) {
+      final date = (e['date'] as String?) ?? '';
+      out.putIfAbsent(date, () => []).add(e);
+    }
+    return out;
+  }
+
+  Future<void> _openAddExpense({Map<String, dynamic>? initial}) async {
+    final res = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: NudgeTokens.elevated,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => AddExpenseSheet(initial: initial),
+    );
+    if (res == null) return;
+
+    final action = (res['__action'] as String?) ?? 'save';
+    final all = _allExpenses();
+
+    if (action == 'delete') {
+      final id = res['id']?.toString();
+      if (id != null) all.removeWhere((e) => e['id']?.toString() == id);
+      await AppStorage.financeBox.put('expenses', all);
+      setState(() {});
+      return;
+    }
+
+    final cleaned = Map<String, dynamic>.from(res)..remove('__action');
+    final id = cleaned['id']?.toString();
+    if (id == null) return;
+
+    final idx = all.indexWhere((e) => e['id']?.toString() == id);
+    if (idx >= 0) {
+      all[idx] = cleaned;
+    } else {
+      all.insert(0, cleaned);
+    }
+    await AppStorage.financeBox.put('expenses', all);
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final grouped = _grouped();
+    final sortedDates = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+    final isCurrentMonth = _month.year == DateTime.now().year &&
+        _month.month == DateTime.now().month;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Transactions'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: NudgeTokens.border),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
+        children: [
+          // Month selector
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: NudgeTokens.card,
+              border: Border.all(color: NudgeTokens.border),
+            ),
+            child: Row(
+              children: [
+                _NavBtn(icon: Icons.chevron_left_rounded, onTap: () => _bumpMonth(-1)),
+                Expanded(
+                  child: Text(
+                    _monthLabel(),
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: NudgeTokens.textHigh,
+                    ),
+                  ),
+                ),
+                _NavBtn(icon: Icons.chevron_right_rounded, onTap: () => _bumpMonth(1)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          if (sortedDates.isEmpty)
+            _EmptyFinance(
+              onAdd: () => _openAddExpense(),
+              hasBudget: _budget() > 0,
+            )
+          else
+            ...sortedDates.map((date) {
+              final items = grouped[date]!;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      _formatDate(date, isCurrentMonth),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: NudgeTokens.textLow,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      color: NudgeTokens.card,
+                      border: Border.all(color: NudgeTokens.border),
+                    ),
+                    child: Column(
+                      children: List.generate(items.length, (i) {
+                        final item = items[i];
+                        final isLast = i == items.length - 1;
+                        return _TransactionRow(
+                          item: item,
+                          isLast: isLast,
+                          onTap: () => _openAddExpense(initial: item),
+                        );
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              );
+            }),
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: SizedBox(
+          height: 50,
+          child: FilledButton.icon(
+            onPressed: () => _openAddExpense(),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Add Expense'),
+            style: FilledButton.styleFrom(
+              backgroundColor: NudgeTokens.finB,
+              foregroundColor: const Color(0xFF001A0E),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _SourceSettingsSheet extends StatefulWidget {
   final VoidCallback onChanged;

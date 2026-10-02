@@ -7,7 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../app.dart' show NudgeTokens;
 import '../../storage.dart';
 import '../../utils/usage_service.dart';
-import '../../utils/detox_service.dart' show DetoxSchedule;
+import '../../utils/detox_service.dart';
 
 const _kGoalMs = 3 * 60 * 60 * 1000; // 3-hour daily goal
 
@@ -213,6 +213,12 @@ class _DigitalWellbeingScreenState extends State<DigitalWellbeingScreen>
   }
 
   void _editSchedule(int idx) async {
+    if (DetoxService.instance.isCurrentlyBlocking) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Schedules cannot be modified while Detox is active.'))
+      );
+      return;
+    }
     final result = await showModalBottomSheet<DetoxSchedule>(
       context: context,
       isScrollControlled: true,
@@ -226,6 +232,7 @@ class _DigitalWellbeingScreenState extends State<DigitalWellbeingScreen>
   }
 
   void _deleteSchedule(int idx) async {
+    if (DetoxService.instance.isCurrentlyBlocking) return;
     setState(() => _schedules.removeAt(idx));
     await _saveDetox();
   }
@@ -303,7 +310,7 @@ class _DigitalWellbeingScreenState extends State<DigitalWellbeingScreen>
           ),
         ],
       ),
-      floatingActionButton: _tab.index == 1
+      floatingActionButton: (_tab.index == 1 && !DetoxService.instance.isCurrentlyBlocking)
           ? FloatingActionButton(
               onPressed: _addSchedule,
               backgroundColor: NudgeTokens.purple,
@@ -721,17 +728,39 @@ class _DigitalWellbeingScreenState extends State<DigitalWellbeingScreen>
       return _DetoxEmptyState();
     }
 
-    final anyActive = _schedules.any(_isScheduleActive);
+    final isBlocking = DetoxService.instance.isCurrentlyBlocking;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
       children: [
-        if (anyActive)
+        if (isBlocking) ...[
           _ActiveBlockingBanner(),
-        const SizedBox(height: 4),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: NudgeTokens.red.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: NudgeTokens.red.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.lock_rounded, color: NudgeTokens.red, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Settings are locked during an active detox.',
+                    style: GoogleFonts.outfit(color: NudgeTokens.red, fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         ..._schedules.asMap().entries.map((e) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _buildScheduleTile(e.value, e.key),
+              child: _buildScheduleTile(e.value, e.key, isBlocking),
             )),
       ],
     );
@@ -739,7 +768,7 @@ class _DigitalWellbeingScreenState extends State<DigitalWellbeingScreen>
 
   static const _dayLabels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
-  Widget _buildScheduleTile(DetoxSchedule s, int idx) {
+  Widget _buildScheduleTile(DetoxSchedule s, int idx, bool isBlocking) {
     final isActive = _isScheduleActive(s);
     String fmtTime(TimeOfDay t) =>
         '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
@@ -784,7 +813,7 @@ class _DigitalWellbeingScreenState extends State<DigitalWellbeingScreen>
                         fontSize: 10,
                         fontWeight: FontWeight.w800)),
               )
-            else
+            else if (!isBlocking)
               IconButton(
                 onPressed: () => _deleteSchedule(idx),
                 icon: const Icon(Icons.delete_outline_rounded,
